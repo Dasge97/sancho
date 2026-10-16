@@ -3,6 +3,7 @@ import 'express-async-errors';
 import express from 'express'; import session from 'express-session'; import PgSession from 'connect-pg-simple'; import helmet from 'helmet'; import rateLimit from 'express-rate-limit'; import bcrypt from 'bcryptjs'; import crypto from 'node:crypto'; import path from 'node:path'; import {fileURLToPath,pathToFileURL} from 'node:url'; import {z} from 'zod';
 import {pool,migrate} from './db.js';
 import {annotateDiff,changedFiles,gatherContext} from './context.js';
+import {staticAnalysis,type StaticReport} from './static-analysis.js';
 import {parseRepoConfig,rulesForFiles,type RepoConfig} from './repo-config.js';
 import {buildInstructions,defaultPrompt,PROMPT_NAMES,shortHash,type PromptName,type PromptOverrides} from './prompts.js';
 import {findingFingerprint,hmacSha256,safeEqual,webhookEventKey,renderSummary,renderInlineComment,sanchoLink,clip,addedLineExists,cleanSuggestion,filterReviewDiff,redactSecretsFromText,normalizePullRequest,isSessionlessPath,shouldAutoPublish} from './domain.js';
@@ -506,14 +507,14 @@ async function runReview(job:any){
   try{
     const repo=(await pool.query('SELECT * FROM repositories WHERE id=$1',[repo_id])).rows[0];if(!repo||!repo.active)throw new Error('repository_paused');
     const pr=(await pool.query('SELECT p.*,r.source_sha run_source_sha,r.destination_sha run_destination_sha FROM pull_requests p JOIN review_runs r ON r.pull_request_id=p.id WHERE r.id=$1',[run_id])).rows[0];if(!pr)throw new Error('pull_request_missing');
-    let diff='',source='simulator',rawTruncated=false;
+    let diff='',source='simulator',rawTruncated=false,scanDiff='';
     if(repo.remote_uuid.startsWith('sim:'))diff="diff --git a/src/Example.php b/src/Example.php\n--- a/src/Example.php\n+++ b/src/Example.php\n@@ -1,0 +1,1 @@\n+public function show(Request $request, int $id): JsonResponse { return $this->json($this->repository->find($id)); }";
     else{
       const conn=await setting('bitbucket_connection');if(!conn)throw new Error('bitbucket_not_configured');const token=decrypt(conn.secret),auth='Basic '+Buffer.from(conn.email+':'+token).toString('base64');
       const endpoint='https://api.bitbucket.org/2.0/repositories/'+encodeURIComponent(repo.workspace)+'/'+encodeURIComponent(repo.slug)+'/pullrequests/'+number;
       const current=await fetch(endpoint,{headers:{Authorization:auth},signal:AbortSignal.timeout(20000)});if(!current.ok)throw new Error('bitbucket_'+current.status);const remote:any=await current.json();
       if(remote.state!=='OPEN'||remote.draft||remote.source?.commit?.hash!==pr.run_source_sha||remote.destination?.commit?.hash!==pr.run_destination_sha){await pool.query("UPDATE review_runs SET status='superseded',publication_status='stale',error_code='snapshot_changed',finished_at=now() WHERE id=$1",[run_id]);await pool.query("UPDATE jobs SET status='completed' WHERE id=$1",[job.id]);return}
-      const r=await fetch(endpoint+'/diff',{headers:{Authorization:auth},signal:AbortSignal.timeout(30000)});if(!r.ok)throw new Error('bitbucket_'+r.status);const rawDiff=await r.text();rawTruncated=Buffer.byteLength(rawDiff,'utf8')>350000;diff=rawDiff.slice(0,350000);source='bitbucket';
+      const r=await fetch(endpoint+'/diff',{headers:{Authorization:auth},signal:AbortSignal.timeout(30000)});if(!r.ok)throw new Error('bitbucket_'+r.status);const rawDiff=await r.text();rawTruncated=Buffer.byteLength(rawDiff,'utf8')>350000;diff=rawDiff.slice(0,350000);scanDiff=diff;source='bitbucket';
       const confirm=await fetch(endpoint,{headers:{Authorization:auth},signal:AbortSignal.timeout(20000)});if(!confirm.ok)throw new Error('bitbucket_'+confirm.status);const after:any=await confirm.json();if(after.source?.commit?.hash!==pr.run_source_sha||after.destination?.commit?.hash!==pr.run_destination_sha){await pool.query("UPDATE review_runs SET status='superseded',publication_status='stale',error_code='snapshot_changed',finished_at=now() WHERE id=$1",[run_id]);await pool.query("UPDATE jobs SET status='completed' WHERE id=$1",[job.id]);return}
     }
     // Configuración del propio repositorio (.sancho.yml de la rama de destino) y ficha del proyecto.
@@ -534,6 +535,9 @@ async function runReview(job:any){
     const conn=source==='bitbucket'?await setting('bitbucket_connection'):null;
     let context:{text:string;files:{path:string;reason:string;truncated:boolean}[];redacted:number;partial:boolean}={text:'',files:[],redacted:0,partial:false};
     if(source==='bitbucket'&&!agentMode){const auth='Basic '+Buffer.from(conn.email+':'+decrypt(conn.secret)).toString('base64');context=await gatherContext(filtered.diff,(path,max)=>fetchRepoFile(repo,auth,pr.run_source_sha,path,max))}
+    // Análisis estático, sin ejecutar el proyecto. Usa el diff antes de tapar secretos, para que gitleaks los vea.
+    const staticReport:StaticReport=source==='bitbucket'?await staticAnalysis(scanDiff,{source:p=>fetchRepoFile(repo,bbAuth(conn),pr.run_source_sha,p,400000),base:p=>fetchRepoFile(repo,bbAuth(conn),pr.run_destination_sha,p,400000)}):{findings:[],tools:[]};
+    const staticBlock=staticReport.findings.length?['','<analisis_estatico>','Problemas que ya han encontrado las herramientas y se publican aparte. No los repitas.',...staticReport.findings.map(f=>`- ${f.path}:${f.line} · ${f.shortTitle}`),'</analisis_estatico>']:[];
     // Datos para el modelo: van en `input`, separados de las instrucciones y marcados como no confiables.
     // Seguimiento: comentarios de Sancho que siguen abiertos en esta PR y ficheros cambiados desde el
     // último commit revisado, para revisar solo lo nuevo y cerrar lo que ya está arreglado.
@@ -546,12 +550,12 @@ async function runReview(job:any){
       if(previousSha&&sinceFiles)sinceBlock=['','<cambios_desde_la_ultima_revision commit_anterior="'+previousSha.slice(0,12)+'">',...(sinceFiles.length?sinceFiles.map(f=>'- '+f):['(ningún fichero)']),'</cambios_desde_la_ultima_revision>'];
     }
     const openBlock=openThreads.length?['','<comentarios_abiertos>',JSON.stringify(openThreads.map((t:any)=>({id:t.ref,path:t.path,line:t.start_line,titulo:t.title})),null,1),'</comentarios_abiertos>']:[];
-    const dataBlocks=['<pull_request>','Título: '+pr.title,'Repositorio: '+repo.workspace+'/'+repo.slug,'</pull_request>',...sinceBlock,...openBlock,'','<diff>',annotateDiff(diff),'</diff>',...(agentMode?[]:['','<contexto>',context.text||'(sin ficheros de contexto)','</contexto>'])].join('\n');
+    const dataBlocks=['<pull_request>','Título: '+pr.title,'Repositorio: '+repo.workspace+'/'+repo.slug,'</pull_request>',...sinceBlock,...openBlock,...staticBlock,'','<diff>',annotateDiff(diff),'</diff>',...(agentMode?[]:['','<contexto>',context.text||'(sin ficheros de contexto)','</contexto>'])].join('\n');
     const rules={global:await setting('review_rules'),projectContext:repo.config?.context,repository:repo.config?.rules,profile:profile?.content,repoFileContext:repoCfg.config?.contexto,repoFileRules:rulesForFiles(repoCfg.config,changedFiles(diff)),learned:await learnedRules(repo.id)};
     const overrides=await activePrompts();
     const detectionInstructions=buildInstructions('deteccion',rules,agentMode,overrides),verificationInstructions=buildInstructions('verificacion',rules,agentMode,overrides);
     const openai=agentMode?null:await getSecret('openai_secret'),model=agentMode?String(await setting('agent_model')||'claude-opus-5-5'):await setting('model');let candidates:any[]=[],confirmed:any[]=[],summary='Análisis completado sin hallazgos confirmados.',walkthrough:string|null=null,changes:{path:string;summary:string}[]=[],followUp:any[]=[];
-    const coverage:any={source,engine,files_considered:filtered.files,excluded_files:filtered.excluded,truncated:rawTruncated||filtered.truncated||context.partial,context_files:context.files.length,context_list:context.files,redacted_lines:filtered.redactedLines+context.redacted,project_code_executed:false,prompt_version:shortHash(detectionInstructions+verificationInstructions),limitations:[]};if(rawTruncated||filtered.truncated||context.partial)coverage.limitations.push('Se alcanzó un límite de tamaño o lectura; el análisis puede estar incompleto.');
+    const coverage:any={source,engine,files_considered:filtered.files,excluded_files:filtered.excluded,truncated:rawTruncated||filtered.truncated||context.partial,context_files:context.files.length,context_list:context.files,redacted_lines:filtered.redactedLines+context.redacted,project_code_executed:false,static_analysis:staticReport.tools,prompt_version:shortHash(detectionInstructions+verificationInstructions),limitations:[]};if(rawTruncated||filtered.truncated||context.partial)coverage.limitations.push('Se alcanzó un límite de tamaño o lectura; el análisis puede estar incompleto.');
     // Una pregunta al modelo, por el motor que toque. Devuelve la respuesta y, con el agente, qué herramientas usó.
     const agentCalls:{tool:string;input:any}[]=[];
     const ask=async(kind:string,instructions:string,input:string,schema:any)=>{
@@ -607,6 +611,13 @@ async function runReview(job:any){
       // Una sugerencia con algo que parezca un secreto no se publica.
       const suggested=cleanSuggestion(diff,file,line,f.suggestion),suggestion=suggested&&!redactSecretsFromText(suggested).redacted?suggested:null;
       await pool.query("INSERT INTO findings(run_id,fingerprint,path,start_line,severity,category,title,scenario,impact,evidence,recommendation,verified,short_title,short_impact,short_fix,suggestion) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,$12,$13,$14,$15) ON CONFLICT(run_id,fingerprint) DO NOTHING",[run_id,fp,file,line,f.severity,String(f.category||'other'),String(f.title).slice(0,300),String(f.scenario||'').slice(0,2000),String(f.impact||'').slice(0,1000),String(f.evidence).slice(0,2000),String(f.recommendation||'').slice(0,1000),f.short_title?clip(f.short_title,70):null,f.short_impact?clip(f.short_impact,160):null,f.short_fix?clip(f.short_fix,160):null,suggestion]);accepted++}
+    // Lo que encuentran las herramientas se publica sin pasar por el modelo.
+    for(const s of staticReport.findings){
+      if(rank[s.severity]<rank[min]||!addedLineExists(scanDiff,s.path,s.line))continue;
+      const fp=findingFingerprint(repo.id,number,{path:s.path,category:s.category,title:s.title});
+      const r=await pool.query("INSERT INTO findings(run_id,fingerprint,path,start_line,severity,category,title,scenario,impact,evidence,recommendation,verified,short_title,short_impact,short_fix) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,$12,$13,$14) ON CONFLICT(run_id,fingerprint) DO NOTHING",[run_id,fp,s.path,s.line,s.severity,s.category,s.title.slice(0,300),s.scenario,s.impact,s.evidence,s.recommendation,clip(s.shortTitle,70),clip(s.shortImpact,160),clip(s.shortFix,160)]);
+      accepted+=r.rowCount||0;
+    }
     // Sin llamada a OpenAI (simulador) el resumen por defecto diría «sin hallazgos» aunque los haya.
     if(!candidates.length&&accepted)summary=accepted===1?'Se ha confirmado un problema.':`Se han confirmado ${accepted} problemas.`;
     const finalStatus=coverage.truncated||!diff?'partial':'completed';

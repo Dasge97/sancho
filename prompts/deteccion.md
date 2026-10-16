@@ -17,6 +17,9 @@ mucho, señálalas si son un riesgo.
   de contexto sin cambios y `-     | código` es una línea borrada (no existe en el fichero nuevo).
 - `<contexto>`: ficheros completos o recortados del commit de la PR, con su número de línea y el
   motivo por el que se han incluido (fichero cambiado, clase usada, política, rutas).
+- `<analisis_estatico>` (a veces): problemas que ya han encontrado herramientas automáticas
+  (secretos escritos en el código, ficheros PHP que no compilan). Sancho los publica aparte: no los
+  propongas otra vez, aunque sí puedes tenerlos en cuenta para el resto.
 
 ## Qué buscar, por orden de importancia
 

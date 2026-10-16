@@ -203,11 +203,12 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     expect(detection.instructions).toContain('No comentes los seeders.');
     expect(detection.input).toContain('+L2| return $this->json($repo->find($id));');
     expect(detection.input).not.toContain('<contexto>');
-    // Sin lista fija de ficheros: Sancho no lee código del repositorio por su cuenta.
-    expect(calls.filter(c=>c.url.includes('/src/abc44/'))).toEqual([]);
+    // Sin lista fija de contexto: Sancho solo lee los PHP cambiados en la PR, para pasarles `php -l`.
+    expect(calls.filter(c=>c.url.includes('/src/abc44/')).map(c=>c.url.split('/src/abc44/')[1])).toEqual(['src/Controller.php']);
     const run=(await pool.query("SELECT r.status,r.coverage FROM review_runs r JOIN pull_requests p ON p.id=r.pull_request_id WHERE p.number=44")).rows[0];
     expect(run.status).toBe('completed');
     expect(run.coverage.engine).toBe('agent');
+    expect(run.coverage.static_analysis.map((t:any)=>t.tool)).toEqual(['gitleaks','php']);
     expect(run.coverage.context_list).toEqual([{path:'app/Policies/InvoicePolicy.php',reason:'leído por el agente',truncated:false}]);
     expect(run.coverage.agent_searches).toBe(2);
     const usage=(await pool.query("SELECT provider,model,cost_usd FROM usage_calls WHERE provider='claude-agent'")).rows;

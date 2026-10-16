@@ -22,6 +22,13 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 
 const running = computed(() => ['queued', 'analyzing'].includes(data.value?.run.status) || data.value?.run.publication_status === 'pending');
 const coverage = computed(() => data.value?.run.coverage || {});
+// Herramientas de análisis estático: cuántos ficheros miraron y qué encontraron.
+const toolNames: Record<string, string> = {gitleaks: 'Secretos (gitleaks)', php: 'Sintaxis de PHP (php -l)'};
+function toolStatus(t: {status: string; files: number; findings: number; note?: string}) {
+  const base = t.status === 'ok' ? `${t.files} ${t.files === 1 ? 'fichero' : 'ficheros'} · ${t.findings ? `${t.findings} ${t.findings === 1 ? 'problema' : 'problemas'}` : 'sin problemas'}`
+    : t.status === 'skipped' ? 'No aplica' : t.status === 'unavailable' ? 'No instalado' : 'No se pudo ejecutar';
+  return t.note && t.status !== 'skipped' ? `${base}. ${t.note}` : base;
+}
 const tab = computed({get: () => ['problemas', 'cobertura', 'consumo'].includes(route.tab || '') ? route.tab! : 'problemas', set: setTab});
 const tabs = computed(() => [
   {id: 'problemas', label: 'Problemas', count: data.value?.findings.length ?? 0},
@@ -147,6 +154,7 @@ async function vote(findingId: string, value: 'useful' | 'false_positive') {
             <div><dt>Problemas propuestos / confirmados</dt><dd class="tabular">{{ int(coverage.findings_received ?? 0) }} / {{ int(coverage.findings_accepted ?? 0) }}</dd></div>
             <div v-if="coverage.follow_up?.previous_commit"><dt>Ficheros cambiados desde la revisión anterior (<code>{{ coverage.follow_up.previous_commit.slice(0, 7) }}</code>)</dt><dd class="tabular">{{ coverage.follow_up.changed_files ?? '—' }}</dd></div>
             <div v-if="coverage.follow_up?.open_before"><dt>Comentarios anteriores: arreglados / siguen abiertos</dt><dd class="tabular">{{ coverage.follow_up.fixed }} / {{ coverage.follow_up.still_present }}</dd></div>
+            <div v-for="t in coverage.static_analysis || []" :key="t.tool"><dt>{{ toolNames[t.tool] || t.tool }}</dt><dd>{{ toolStatus(t) }}</dd></div>
             <div><dt>Se ejecutó código del proyecto</dt><dd>No, nunca</dd></div>
             <div v-if="coverage.prompt_version"><dt>Versión de las instrucciones y reglas</dt><dd><code>{{ coverage.prompt_version }}</code></dd></div>
           </dl>
