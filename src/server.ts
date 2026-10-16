@@ -554,8 +554,10 @@ async function runReview(job:any){
     let context:{text:string;files:{path:string;reason:string;truncated:boolean}[];redacted:number;partial:boolean}={text:'',files:[],redacted:0,partial:false};
     if(source==='bitbucket'&&!agentMode){const auth='Basic '+Buffer.from(conn.email+':'+decrypt(conn.secret)).toString('base64');context=await gatherContext(filtered.diff,(path,max)=>fetchRepoFile(repo,auth,pr.run_source_sha,path,max))}
     // Análisis estático, sin ejecutar el proyecto. Usa el diff antes de tapar secretos, para que gitleaks los vea.
-    const staticReport:StaticReport=source==='bitbucket'?await staticAnalysis(scanDiff,{source:p=>fetchRepoFile(repo,bbAuth(conn),pr.run_source_sha,p,400000),base:p=>fetchRepoFile(repo,bbAuth(conn),pr.run_destination_sha,p,400000)}):{findings:[],tools:[]};
+    const staticReport:StaticReport=source==='bitbucket'?await staticAnalysis(scanDiff,{source:p=>fetchRepoFile(repo,bbAuth(conn),pr.run_source_sha,p,400000),base:p=>fetchRepoFile(repo,bbAuth(conn),pr.run_destination_sha,p,400000)}):{findings:[],tools:[],hints:[]};
     const staticBlock=staticReport.findings.length?['','<analisis_estatico>','Problemas que ya han encontrado las herramientas y se publican aparte. No los repitas.',...staticReport.findings.map(f=>`- ${f.path}:${f.line} · ${f.shortTitle}`),'</analisis_estatico>']:[];
+    // Avisos de Opengrep: pistas para el modelo, que solo las propone si las confirma en el código.
+    const hintBlock=staticReport.hints.length?['','<pistas_opengrep>',...staticReport.hints.map(h=>`- ${h.path}:${h.line} · ${h.message} (regla ${h.rule})`),'</pistas_opengrep>']:[];
     // Datos para el modelo: van en `input`, separados de las instrucciones y marcados como no confiables.
     // Seguimiento: comentarios de Sancho que siguen abiertos en esta PR y ficheros cambiados desde el
     // último commit revisado, para revisar solo lo nuevo y cerrar lo que ya está arreglado.
@@ -568,7 +570,7 @@ async function runReview(job:any){
       if(previousSha&&sinceFiles)sinceBlock=['','<cambios_desde_la_ultima_revision commit_anterior="'+previousSha.slice(0,12)+'">',...(sinceFiles.length?sinceFiles.map(f=>'- '+f):['(ningún fichero)']),'</cambios_desde_la_ultima_revision>'];
     }
     const openBlock=openThreads.length?['','<comentarios_abiertos>',JSON.stringify(openThreads.map((t:any)=>({id:t.ref,path:t.path,line:t.start_line,titulo:t.title})),null,1),'</comentarios_abiertos>']:[];
-    const dataBlocks=reviewData({title:pr.title,repository:repo.workspace+'/'+repo.slug,extra:[...sinceBlock,...openBlock,...staticBlock],diff,context:agentMode?null:context.text});
+    const dataBlocks=reviewData({title:pr.title,repository:repo.workspace+'/'+repo.slug,extra:[...sinceBlock,...openBlock,...staticBlock,...hintBlock],diff,context:agentMode?null:context.text});
     // Perfil de revisión: el del .sancho.yml manda sobre el del panel. El exigente añade detalles menores.
     const strict=(repoCfg.config?.perfil||await setting('review_profile')||'estandar')==='exigente';
     // Comprobaciones antes de fusionar: las del panel («Nombre: descripción») y las del .sancho.yml.

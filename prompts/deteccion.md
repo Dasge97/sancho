@@ -20,6 +20,9 @@ mucho, señálalas si son un riesgo.
 - `<analisis_estatico>` (a veces): problemas que ya han encontrado herramientas automáticas
   (secretos escritos en el código, ficheros PHP que no compilan). Sancho los publica aparte: no los
   propongas otra vez, aunque sí puedes tenerlos en cuenta para el resto.
+- `<pistas_opengrep>` (a veces): líneas añadidas que Opengrep, una herramienta de patrones, señala
+  como posible problema. Opengrep se equivoca a menudo: compruébalas con el código y propón solo las
+  que sean un problema real según estas instrucciones. Ignorar una pista falsa es lo correcto.
 
 ## Qué buscar, por orden de importancia
 

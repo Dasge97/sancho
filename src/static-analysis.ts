@@ -8,14 +8,16 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-export type Tool = 'gitleaks' | 'php';
+export type Tool = 'gitleaks' | 'php' | 'opengrep';
+/** Aviso de Opengrep sobre una línea añadida. No se publica: el modelo lo comprueba. */
+export interface StaticHint { tool: 'opengrep'; path: string; line: number; rule: string; message: string }
 export interface StaticFinding {
   tool: Tool; path: string; line: number; severity: 'critical' | 'high'; category: 'security' | 'correctness';
   title: string; scenario: string; impact: string; evidence: string; recommendation: string;
   shortTitle: string; shortImpact: string; shortFix: string;
 }
 export interface ToolRun { tool: Tool; status: 'ok' | 'unavailable' | 'failed' | 'skipped'; files: number; findings: number; note?: string }
-export interface StaticReport { findings: StaticFinding[]; tools: ToolRun[] }
+export interface StaticReport { findings: StaticFinding[]; tools: ToolRun[]; hints: StaticHint[] }
 export interface DiffFile { path: string; created: boolean; deleted: boolean; lines: {line: number; text: string}[] }
 type Fetch = (path: string) => Promise<{text: string; truncated: boolean} | null>;
 
@@ -148,11 +150,67 @@ export async function runPhpLint(files: DiffFile[], source: Fetch, base: Fetch, 
   return {run: {tool: 'php', status: 'ok', files: checked, findings: findings.length, ...(notes ? {note: notes} : {})}, findings};
 }
 
+// Opengrep: patrones inseguros en PHP, JavaScript, TypeScript y Python, con las reglas de la imagen
+// (OPENGREP_RULES). Analiza los ficheros cambiados completos, copiados a una carpeta temporal; no
+// ejecuta nada. Solo se quedan los avisos sobre líneas añadidas y con confianza media o alta.
+const OPENGREP_FILES = /\.(php|[cm]?[jt]sx?|py)$/i;
+export async function runOpengrep(files: DiffFile[], source: Fetch, bin = process.env.OPENGREP_BIN || 'opengrep', rules = process.env.OPENGREP_RULES || '/opt/opengrep-rules'): Promise<{run: ToolRun; hints: StaticHint[]}> {
+  const scan = files.filter(f => !f.deleted && OPENGREP_FILES.test(f.path) && !SKIP.test(f.path) && f.lines.length).slice(0, 40);
+  if (!scan.length) return {run: {tool: 'opengrep', status: 'skipped', files: 0, findings: 0, note: 'La PR no cambia ficheros de PHP, JavaScript, TypeScript ni Python.'}, hints: []};
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'sancho-opengrep-'));
+  try {
+    let written = 0;
+    for (const f of scan) {
+      const src = await source(f.path);
+      if (!src || src.truncated) continue;
+      const target = path.join(dir, f.path);
+      if (!target.startsWith(dir + path.sep)) continue;
+      await fs.mkdir(path.dirname(target), {recursive: true});
+      await fs.writeFile(target, src.text);
+      written++;
+    }
+    if (!written) return {run: {tool: 'opengrep', status: 'skipped', files: 0, findings: 0, note: 'No se pudieron leer los ficheros cambiados.'}, hints: []};
+    const report = path.join(os.tmpdir(), `sancho-opengrep-${path.basename(dir)}.json`);
+    // Solo las reglas de los lenguajes que cambia la PR: cargar las de los cuatro tarda ~12 s.
+    // Las de JavaScript sirven también para TypeScript.
+    const langs = new Set(scan.flatMap(f => /\.php$/i.test(f.path) ? ['php'] : /\.py$/i.test(f.path) ? ['python'] : /\.[cm]?tsx?$/i.test(f.path) ? ['typescript', 'javascript'] : ['javascript']));
+    const configs = [...langs].flatMap(l => ['--config', path.join(rules, l)]);
+    const r = await run(bin, ['scan', ...configs, '--json', '--json-output=' + report, '--quiet', '--disable-version-check', '--timeout', '10', '--severity', 'ERROR', '--severity', 'WARNING', dir], '', 180000);
+    if (!r) return {run: {tool: 'opengrep', status: 'unavailable', files: 0, findings: 0, note: 'Opengrep no está instalado.'}, hints: []};
+    const json: any = JSON.parse(await fs.readFile(report, 'utf8').catch(() => '{}') || '{}');
+    await fs.rm(report, {force: true});
+    if (!Array.isArray(json.results)) return {run: {tool: 'opengrep', status: 'failed', files: written, findings: 0, note: `Opengrep terminó con el código ${r.code}.`}, hints: []};
+    const hints = opengrepHints(json.results, scan, dir);
+    return {run: {tool: 'opengrep', status: 'ok', files: written, findings: hints.length}, hints};
+  } finally { await fs.rm(dir, {recursive: true, force: true}); }
+}
+
+export function opengrepHints(results: any[], files: DiffFile[], root: string): StaticHint[] {
+  const seen = new Set<string>(), out: StaticHint[] = [];
+  for (const r of results) {
+    if (String(r?.extra?.metadata?.confidence || '').toUpperCase() === 'LOW') continue;
+    const rel = path.relative(root, String(r?.path || '')).split(path.sep).join('/');
+    const file = files.find(f => f.path === rel), start = Number(r?.start?.line), end = Number(r?.end?.line) || start;
+    // El aviso cuenta si toca alguna línea añadida; se ancla a la primera.
+    const added = file?.lines.find(l => l.line >= start && l.line <= end);
+    if (!file || !added) continue;
+    const rule = String(r.check_id || '').split('.').slice(-1)[0].replace(/[^\w.-]/g, '').slice(0, 80);
+    if (seen.has(`${rel}:${added.line}:${rule}`)) continue;
+    seen.add(`${rel}:${added.line}:${rule}`);
+    out.push({tool: 'opengrep', path: rel, line: added.line, rule, message: String(r?.extra?.message || '').replace(/\s+/g, ' ').trim().slice(0, 240)});
+  }
+  return out.slice(0, 20);
+}
+
 export async function staticAnalysis(diff: string, io: {source: Fetch; base: Fetch}): Promise<StaticReport> {
-  const files = addedLines(diff), tools: ToolRun[] = [], findings: StaticFinding[] = [];
-  for (const [tool, job] of [['gitleaks', () => runGitleaks(files)], ['php', () => runPhpLint(files, io.source, io.base)]] as const) {
-    try { const r = await job(); tools.push(r.run); findings.push(...r.findings); }
+  const files = addedLines(diff), tools: ToolRun[] = [], findings: StaticFinding[] = [], hints: StaticHint[] = [];
+  // php -l y Opengrep leen los mismos ficheros: una sola lectura de cada uno.
+  const cache = new Map<string, Promise<{text: string; truncated: boolean} | null>>();
+  const source: Fetch = p => { if (!cache.has(p)) cache.set(p, io.source(p)); return cache.get(p)!; };
+  const jobs: [Tool, () => Promise<{run: ToolRun; findings?: StaticFinding[]; hints?: StaticHint[]}>][] = [['gitleaks', () => runGitleaks(files)], ['php', () => runPhpLint(files, source, io.base)], ['opengrep', () => runOpengrep(files, source)]];
+  for (const [tool, job] of jobs) {
+    try { const r = await job(); tools.push(r.run); findings.push(...(r.findings || [])); hints.push(...(r.hints || [])); }
     catch (e) { tools.push({tool, status: 'failed', files: 0, findings: 0, note: e instanceof Error && e.message.endsWith('_timeout') ? 'Tardó demasiado.' : 'Falló al ejecutarse.'}); }
   }
-  return {findings, tools};
+  return {findings, tools, hints};
 }

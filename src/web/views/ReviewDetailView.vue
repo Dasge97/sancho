@@ -26,7 +26,7 @@ const coverage = computed(() => data.value?.run.coverage || {});
 const checkWord: Record<string, string> = {cumple: 'Cumple', no_cumple: 'No cumple', no_aplica: 'No aplica', sin_evaluar: 'Sin evaluar'};
 const checkTone: Record<string, 'success' | 'danger' | 'neutral' | 'warning'> = {cumple: 'success', no_cumple: 'danger', no_aplica: 'neutral', sin_evaluar: 'warning'};
 // Herramientas de análisis estático: cuántos ficheros miraron y qué encontraron.
-const toolNames: Record<string, string> = {gitleaks: 'Secretos (gitleaks)', php: 'Sintaxis de PHP (php -l)'};
+const toolNames: Record<string, string> = {gitleaks: 'Secretos (gitleaks)', php: 'Sintaxis de PHP (php -l)', opengrep: 'Patrones inseguros (Opengrep, como pistas)'};
 function toolStatus(t: {status: string; files: number; findings: number; note?: string}) {
   const base = t.status === 'ok' ? `${t.files} ${t.files === 1 ? 'fichero' : 'ficheros'} · ${t.findings ? `${t.findings} ${t.findings === 1 ? 'problema' : 'problemas'}` : 'sin problemas'}`
     : t.status === 'skipped' ? 'No aplica' : t.status === 'unavailable' ? 'No instalado' : 'No se pudo ejecutar';

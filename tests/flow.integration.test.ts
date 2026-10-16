@@ -210,7 +210,7 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     const run=(await pool.query("SELECT r.status,r.coverage FROM review_runs r JOIN pull_requests p ON p.id=r.pull_request_id WHERE p.number=44")).rows[0];
     expect(run.status).toBe('completed');
     expect(run.coverage.engine).toBe('agent');
-    expect(run.coverage.static_analysis.map((t:any)=>t.tool)).toEqual(['gitleaks','php']);
+    expect(run.coverage.static_analysis.map((t:any)=>t.tool)).toEqual(['gitleaks','php','opengrep']);
     expect(run.coverage.context_list).toEqual([{path:'app/Policies/InvoicePolicy.php',reason:'leído por el agente',truncated:false}]);
     expect(run.coverage.agent_searches).toBe(2);
     const usage=(await pool.query("SELECT provider,model,cost_usd FROM usage_calls WHERE provider='claude-agent'")).rows;
