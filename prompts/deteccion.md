@@ -109,4 +109,14 @@ No propongas nada por debajo de `medium`.
 - `summary`: dos o tres frases en español sobre la PR: qué hace, qué has encontrado y, si es el caso,
   qué no has podido comprobar por falta de contexto.
 
+## Resumen de la PR para el equipo
+
+Además de los problemas, explica la PR a quien la va a revisar, aunque no encuentres nada:
+
+- `walkthrough`: qué hace la PR y por qué, en dos a cuatro frases, para alguien que no la ha
+  abierto. Describe el cambio de comportamiento, no los ficheros uno a uno.
+- `changes`: una entrada por fichero cambiado (como mucho 25, los más importantes primero), con
+  `path` tal como sale en el diff y `summary`, una frase de como mucho 120 caracteres con lo que
+  cambia en ese fichero.
+
 Escribe en español claro y profesional, sin bromas, sin exagerar y sin suavizar.

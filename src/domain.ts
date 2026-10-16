@@ -47,16 +47,29 @@ export function renderInlineComment(f:PublishedFinding,detailUrl:string):string 
   return `${SEVERITY_ICON[f.severity]||'🟠'} **${s.title}**\n\n${s.impact}\n\n**Arreglo:** ${s.fix} · [Detalle](${detailUrl})`;
 }
 
-// Resumen de la PR: índice de hallazgos (ordenados por gravedad, máximo `limit`), sin repetir el texto de los comentarios en línea.
-export function renderSummary(input:{findings:PublishedFinding[];limit?:number;filesReviewed:number;commit:string;partial:string|null;reviewUrl:string}):string {
+// Tabla de cambios por fichero del resumen (como mucho `limit` filas). Las barras verticales del
+// texto se escapan para no romper la tabla de Markdown.
+function changesTable(changes:{path:string;summary:string}[],limit=15):string {
+  if(!changes.length)return '';
+  const cell=(t:string)=>t.replace(/\|/g,'\\|').replace(/\s+/g,' ').trim();
+  const rows=changes.slice(0,limit).map(c=>`| ${code(cell(c.path))} | ${cell(c.summary)} |`).join('\n');
+  const more=changes.length>limit?`\n\nY ${changes.length-limit} ficheros más en el panel.`:'';
+  return `| Fichero | Qué cambia |\n| --- | --- |\n${rows}${more}`;
+}
+
+// Resumen de la PR: qué hace, qué cambia por fichero y el índice de problemas (ordenados por
+// gravedad, máximo `limit`), sin repetir el texto de los comentarios en línea.
+export function renderSummary(input:{findings:PublishedFinding[];limit?:number;filesReviewed:number;commit:string;partial:string|null;reviewUrl:string;walkthrough?:string|null;changes?:{path:string;summary:string}[]}):string {
   const all=input.findings,total=all.length,findings=all.slice(0,input.limit??8),hiddenCount=total-findings.length;
   const counts=['critical','high','medium'].map(sev=>{const n=all.filter(x=>x.severity===sev).length;return n?`${n} ${SEVERITY_WORD[sev][n===1?0:1]}`:''}).filter(Boolean).join(', ');
   const footer=`${input.filesReviewed} ${input.filesReviewed===1?'fichero revisado':'ficheros revisados'} · commit ${code(input.commit.slice(0,7))} · [Ver revisión completa](${input.reviewUrl})`;
   const partial=input.partial?`\n\n⚠️ Revisión parcial: ${clip(input.partial,160)}`:'';
-  if(!total)return `**Sancho · sin problemas encontrados**${partial}\n\n${footer}`;
+  const about=[input.walkthrough?.trim()?`**Qué hace esta PR.** ${input.walkthrough.trim()}`:'',changesTable(input.changes||[])].filter(Boolean).join('\n\n');
+  const aboutBlock=about?`\n\n${about}`:'';
+  if(!total)return `**Sancho · sin problemas encontrados**${aboutBlock}${partial}\n\n${footer}`;
   const list=findings.map((f,i)=>`${i+1}. ${SEVERITY_ICON[f.severity]||'🟠'} ${shortFinding(f).title} · ${code((f.path.split('/').pop()||f.path)+(f.start_line?':'+f.start_line:''))}`).join('\n');
   const more=hiddenCount?`\n\nY ${hiddenCount} más en el panel.`:'';
-  return `**Sancho · ${total} ${total===1?'problema':'problemas'}**${counts?` (${counts})`:''}\n\n${list}${more}${partial}\n\n${footer}`;
+  return `**Sancho · ${total} ${total===1?'problema':'problemas'}**${counts?` (${counts})`:''}${aboutBlock}\n\n**Problemas**\n\n${list}${more}${partial}\n\n${footer}`;
 }
 
 export function shouldReviewWebhook(event:string, payload:any):boolean {

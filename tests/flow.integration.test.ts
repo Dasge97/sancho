@@ -38,7 +38,7 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     if(url==='https://api.openai.com/v1/responses'){
       if(openaiFails)return json({error:{message:'bad request'}},400);
       const body=JSON.parse(init.body);
-      if(body.text.format.name==='sancho_detection')return openaiResponse({summary:'Un hallazgo.',candidates:[{candidate_id:'x',path:'src/Controller.php',start_line:2,severity:'high',category:'authorization',title:'Falta comprobar la propiedad del registro',scenario:'Un usuario cambia el id.',impact:'Lee datos ajenos.',evidence:'find($id) sin política.',recommendation:'Aplicar la política.',short_title:'Factura ajena accesible por id',short_impact:'Un usuario lee facturas de otros cambiando el id.',short_fix:'Llama a `authorize` antes de devolverla.'}]});
+      if(body.text.format.name==='sancho_detection')return openaiResponse({summary:'Un hallazgo.',walkthrough:'Añade la búsqueda de facturas.',changes:[{path:'src/Controller.php',summary:'Devuelve la factura por id.'}],candidates:[{candidate_id:'x',path:'src/Controller.php',start_line:2,severity:'high',category:'authorization',title:'Falta comprobar la propiedad del registro',scenario:'Un usuario cambia el id.',impact:'Lee datos ajenos.',evidence:'find($id) sin política.',recommendation:'Aplicar la política.',short_title:'Factura ajena accesible por id',short_impact:'Un usuario lee facturas de otros cambiando el id.',short_fix:'Llama a `authorize` antes de devolverla.'}]});
       return openaiResponse({results:[{candidate_id:'candidate-0',disposition:'supported',severity:'critical',reason:'Visible en el diff.'}]});
     }
     // Repositorio, rama principal y la PR de la ficha que abre Sancho.
@@ -136,6 +136,8 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     expect(posts[0].body.content.raw.startsWith('🔴 **Factura ajena accesible por id**')).toBe(true);
     expect(posts[0].body.content.raw).toContain('sancho-finding=');
     expect(posts[1].body.content.raw).toContain('sancho-summary=');
+    expect(posts[1].body.content.raw).toContain('**Qué hace esta PR.** Añade la búsqueda de facturas.');
+    expect(posts[1].body.content.raw).toContain('| `src/Controller.php` | Devuelve la factura por id. |');
     expect(posts.map(p=>p.body.content.raw).join('')).not.toContain('<!--');
     expect(calls.some(c=>/\/(approve|merge|request-changes|decline)\b/.test(c.url))).toBe(false);
     const latest=(await pool.query("SELECT publication_status FROM review_runs WHERE source_sha='src-2'")).rows[0];

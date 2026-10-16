@@ -50,7 +50,7 @@ describe('webhook security and idempotency contracts',()=>{
   });
   it('renders the summary as an index without repeating comment bodies',()=>{
     const summary=renderSummary({findings:[finding,{...finding,severity:'medium',short_title:'Otro',start_line:40}],filesReviewed:2,commit:'abcdef1234',partial:null,reviewUrl:'https://sancho.test/?review=run-1&sancho-summary=run-1'});
-    expect(summary).toBe('**Sancho · 2 problemas** (1 alto, 1 medio)\n\n1. 🔴 Inyección SQL en la búsqueda · `InvoiceController.php:28`\n2. 🟠 Otro · `InvoiceController.php:40`\n\n2 ficheros revisados · commit `abcdef1` · [Ver revisión completa](https://sancho.test/?review=run-1&sancho-summary=run-1)');
+    expect(summary).toBe('**Sancho · 2 problemas** (1 alto, 1 medio)\n\n**Problemas**\n\n1. 🔴 Inyección SQL en la búsqueda · `InvoiceController.php:28`\n2. 🟠 Otro · `InvoiceController.php:40`\n\n2 ficheros revisados · commit `abcdef1` · [Ver revisión completa](https://sancho.test/?review=run-1&sancho-summary=run-1)');
     expect(summary).not.toContain('eludir');
     expect(renderSummary({findings:[],filesReviewed:1,commit:'abcdef1',partial:'Límite de tamaño alcanzado.',reviewUrl:'https://s.test/'})).toBe('**Sancho · sin problemas encontrados**\n\n⚠️ Revisión parcial: Límite de tamaño alcanzado.\n\n1 fichero revisado · commit `abcdef1` · [Ver revisión completa](https://s.test/)');
     const many=Array.from({length:10},(_,i)=>({...finding,start_line:i+1}));
@@ -86,5 +86,16 @@ describe('Bitbucket Cloud payloads and publication policy',()=>{
     expect(shouldAutoPublish(true,open)).toBe(true);
     expect(shouldAutoPublish(true,{state:'OPEN',draft:true})).toBe(false);
     expect(shouldAutoPublish(true,{state:'MERGED',draft:false})).toBe(false);
+  });
+});
+
+describe('PR summary with walkthrough and changes',()=>{
+  it('explains the PR and lists the changes per file before the problems',()=>{
+    const summary=renderSummary({findings:[],filesReviewed:2,commit:'abcdef1234',partial:null,reviewUrl:'https://s.test/',walkthrough:'Añade la búsqueda de facturas.',changes:[{path:'app/A.php',summary:'Nuevo método search | con filtro.'},{path:'routes/web.php',summary:'Ruta /invoices/search.'}]});
+    expect(summary.startsWith('**Sancho · sin problemas encontrados**\n\n**Qué hace esta PR.** Añade la búsqueda de facturas.')).toBe(true);
+    expect(summary).toContain('| Fichero | Qué cambia |');
+    expect(summary).toContain('| `app/A.php` | Nuevo método search \\| con filtro. |');
+    const many=Array.from({length:18},(_,i)=>({path:`f${i}.php`,summary:'Cambio.'}));
+    expect(renderSummary({findings:[],filesReviewed:18,commit:'abcdef1',partial:null,reviewUrl:'https://s.test/',changes:many})).toContain('Y 3 ficheros más en el panel.');
   });
 });

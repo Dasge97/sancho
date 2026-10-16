@@ -85,8 +85,15 @@ async function vote(findingId: string, value: 'useful' | 'false_positive') {
         {{ coverage.limitations.join(' ') }}
       </UiNotice>
 
-      <UiCard v-if="data.run.summary && !running" title="Conclusión de Sancho">
-        <p class="summary">{{ data.run.summary }}</p>
+      <UiCard v-if="(data.run.summary || data.run.walkthrough) && !running" :title="data.run.walkthrough ? 'Qué hace esta PR' : 'Conclusión de Sancho'">
+        <p v-if="data.run.walkthrough" class="summary"><InlineCode :text="data.run.walkthrough" /></p>
+        <p v-if="data.run.summary" class="summary" :class="{conclusion: data.run.walkthrough}"><strong v-if="data.run.walkthrough">Conclusión de Sancho: </strong><InlineCode :text="data.run.summary" /></p>
+        <div v-if="data.run.changes?.length" class="table-wrap changes">
+          <table class="table cards">
+            <thead><tr><th>Fichero</th><th>Qué cambia</th></tr></thead>
+            <tbody><tr v-for="c in data.run.changes" :key="c.path"><td><code class="where">{{ c.path }}</code></td><td data-label="Qué cambia"><InlineCode :text="c.summary" /></td></tr></tbody>
+          </table>
+        </div>
       </UiCard>
 
       <div>
@@ -168,6 +175,8 @@ async function vote(findingId: string, value: 'useful' | 'false_positive') {
 .status-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: calc(-1 * var(--space-4)); }
 .small { font-size: var(--text-sm); }
 .summary { max-width: 75ch; }
+.conclusion { margin-top: var(--space-3); color: var(--color-text-muted); }
+.changes { margin-top: var(--space-4); }
 .inline-spin { display: inline-flex; align-items: center; gap: var(--space-2); }
 .spin { animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
