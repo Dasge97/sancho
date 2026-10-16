@@ -13,3 +13,8 @@ playwright-report/
 test-results/
 *.log
 .DS_Store
+
+dist-server/
+
+backups/
+.claude-cerebro/

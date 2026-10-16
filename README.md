@@ -1,211 +1,220 @@
 <div align="center">
 
-# 🫏 Sancho
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/logo-oscuro.png">
+  <img src="docs/img/logo.png" alt="Sancho logo: a squire with a hat and beard looking at a laptop, inside a yellow circle, with the word Sancho underneath" width="210">
+</picture>
 
-### El escudero de tus pull requests.
+### The squire for your pull requests
 
-**Tú escribes la aventura. Sancho vigila que no termine en producción un viernes.**
+AI code review for **Bitbucket Cloud**.<br>
+It finds security flaws and regressions before you merge, and points at the exact line.
 
-Bitbucket Cloud · OpenAI · Node.js · TypeScript · Vue · PostgreSQL · Docker
+**English** · [Español](README.es.md)
 
-[La idea](#la-idea) · [Cómo revisará](#cómo-revisará) · [El panel](#el-panel) · [Hoja de ruta](#hoja-de-ruta) · [Documentación](#documentación)
+[![Version](https://img.shields.io/badge/version-0.1.0-2e7d5b)](https://github.com/Dasge97/sancho/commits/main)
+[![License](https://img.shields.io/badge/license-not%20set-lightgrey)](#license)
+[![Last commit](https://img.shields.io/github/last-commit/Dasge97/sancho?label=last%20commit&color=2e7d5b)](https://github.com/Dasge97/sancho/commits/main)
+<br>
+[![Bitbucket Cloud](https://img.shields.io/badge/Bitbucket-Cloud-0052CC?logo=bitbucket&logoColor=white)](https://bitbucket.org)
+[![Claude Agent SDK](https://img.shields.io/badge/Claude-Agent%20SDK-D97757?logo=claude&logoColor=white)](https://code.claude.com/docs/en/agent-sdk)
+[![Node.js 22](https://img.shields.io/badge/Node.js-22-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Vue 3](https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org)
+[![PostgreSQL 16](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](#installation)
+
+[![Install](https://img.shields.io/badge/Install-2e7d5b?style=for-the-badge)](#installation)
+&nbsp;
+[![How it works](https://img.shields.io/badge/How%20it%20works-0f2d23?style=for-the-badge)](#how-it-works)
+&nbsp;
+[![Screenshots](https://img.shields.io/badge/Screenshots-f4b942?style=for-the-badge)](#screenshots)
 
 </div>
 
----
+<br>
 
-> **Estado: planificación y documentación.**
+<img src="docs/img/detalle.png" alt="A review in the Sancho dashboard: pull request 41 of api-facturas, completed and published to Bitbucket, with Sancho's conclusion and two high-severity problems; the first one, an SQL injection in the search, with its file, line and fix." width="100%">
+
+<br>
+
+> **Status:** V1 working and deployed. It reviews real Bitbucket Cloud pull requests. Before letting it comment on its own in every repository, try it on real pull requests from your team. What is done and verified is in [PROGRESS.md](PROGRESS.md) (Spanish).
 >
-> Este repositorio contiene la especificación y el plan de implementación de Sancho. Las funciones descritas son el alcance previsto; todavía no hay una aplicación ejecutable.
+> The dashboard and the review comments are in Spanish.
+
+## Why Sancho
+
+Every adventure needs someone to ask the awkward question: **"What if this user tries to read someone else's data?"**
+
+| 🎯 Only what matters | 📍 On the exact line | 🤝 You decide |
+| --- | --- | --- |
+| Security flaws, authorization gaps and regressions it can prove. No style nitpicks, no opinions. | Three sentences per problem: what is wrong, why it matters and how to fix it, on the line that causes it. | Sancho comments. It never approves, blocks or merges: merging stays your team's call. |
+
+It is built for **PHP, Symfony and Laravel** teams on Bitbucket Cloud, and it is especially useful when the code is also written by an AI.
+
+## What it looks like in your pull request
+
+A comment on the line with the problem:
+
+> 🔴 **Inyección SQL en la búsqueda**
 >
-> El caballo está ensillado. Falta construir el caballo. Tenemos un plan.
+> Un usuario puede eludir el filtro y leer facturas de otros usuarios.
+>
+> **Arreglo:** usa parámetros enlazados en `DB::select` para `q`. · [Detalle](#)
 
-## La idea
+And one summary per pull request, updated on every change instead of repeated:
 
-Toda aventura necesita a alguien que haga la pregunta incómoda:
+> **Sancho · 2 problemas** (2 altos)
+> 1. 🔴 Inyección SQL en la búsqueda · `InvoiceController.php:28`
+> 2. 🔴 Descarga de facturas ajenas por id · `InvoiceController.php:33`
+>
+> 3 ficheros revisados · commit `a41c09e` · [Ver revisión completa](#)
 
-**«¿Y si ese usuario intenta acceder a los datos de otro?»**
+## What it does
 
-Sancho es un proyecto de revisor de código con IA para **Bitbucket Cloud**, pensado para equipos que quieren una segunda mirada sobre sus pull requests. Analizará los cambios, consultará código relacionado y comentará los problemas que pueda fundamentar.
-
-Su puesto está al lado del desarrollador: acompañar, poner algo de sensatez y señalar el agujero antes de que alguien se caiga dentro.
-
-Especialmente útil cuando quien programa también es una IA. Alguien tiene que preguntar por qué el molino tiene permisos de administrador.
-
-## Menos sermones. Más problemas reales.
-
-La prioridad de Sancho será **la utilidad de sus comentarios**, no cuántos consiga escribir.
-
-| Lo que buscamos | Lo que queremos evitar |
+| | |
 | --- | --- |
-| Un error de autorización con un escenario concreto | «Podrías mejorar la seguridad» |
-| Una regresión explicada con código relacionado | Juzgar una función sin mirar quién la llama |
-| Un problema de transacciones o migraciones | Preferencias personales disfrazadas de errores |
-| Evidencia y una orientación de solución | Comentarios vagos que generan más trabajo |
-| Seguimiento de lo ya comentado | Repetir el mismo aviso con cada commit |
-| Reconocer que falta contexto | Inventar un diagnóstico para rellenar la revisión |
+| **Reviews every pull request on its own** | As soon as it is opened or updated, through one webhook per repository. Drafts are skipped. |
+| **Reads the code like a person would** | A Claude agent works on a checkout of the repository and decides what to open: routes, policies, models and callers of what changed. |
+| **Double-checks itself** | A second agent tries to knock down every finding before it is published, and Sancho checks that it sits on an added line. |
+| **Does not repeat itself** | It tracks each problem across versions of the pull request and never publishes results for code that has changed. |
+| **Tells "clean" from "not reviewed"** | A partial or failed review is shown as such, never as a review without problems. |
+| **Adapts to your team** | Global and per-repository rules, and the AI instructions editable from the dashboard, with version history. |
+| **Keeps spending in check** | Cost per review and per day, and a monthly budget that warns without stopping the work. |
+| **One dashboard for the whole team** | Local accounts, two roles, an audit log, light and dark mode, and mobile-ready. |
 
-**Si Sancho no encuentra un problema relevante, no tiene que fabricarse uno.**
-
-Y si no puede completar el análisis, lo dirá. «No he podido revisar esto» y «no he encontrado problemas» son resultados distintos.
-
-## Cómo revisará
-
-1. **Llega una PR.** Recibirá los eventos de Bitbucket en los repositorios activados.
-2. **Comprueba el terreno.** Omitirá borradores y agrupará cambios seguidos para trabajar sobre la versión más reciente.
-3. **Lee antes de opinar.** Revisará el diff y buscará contexto: rutas, permisos, clases, entidades, migraciones y pruebas relacionadas.
-4. **Busca problemas concretos.** La IA propondrá hallazgos con ubicación, escenario e impacto.
-5. **Revisa sus propias sospechas.** Una segunda comprobación contrastará la evidencia y descartará lo que no pueda justificar.
-6. **Comenta con moderación.** Actualizará un resumen por PR y añadirá comentarios en línea cuando aporten algo.
-7. **Acompaña los cambios.** Las nuevas revisiones tendrán en cuenta los hallazgos anteriores.
-
-Antes de publicar, comprobará que el código analizado siga vigente. Un resultado antiguo no deberá hacerse pasar por actual.
-
-La segunda comprobación ayuda a filtrar errores; no convierte a Sancho en infalible. También él puede confundir algún molino.
-
-### Una conversación que sí queremos tener
-
-> **Ejemplo ficticio · Alta · Autorización**
->
-> **Esta consulta permite acceder a registros de otro usuario.**
->
-> La ruta exige una sesión válida, pero el registro se recupera únicamente por su identificador. En el código consultado no aparece la comprobación de propiedad que utilizan las otras rutas relacionadas.
->
-> Un usuario autenticado podría consultar un registro ajeno cambiando ese identificador.
->
-> **Propuesta:** aplicar la política de autorización antes de devolver el recurso.
-
-El humor se queda en la personalidad del producto. **Los comentarios de revisión serán claros, respetuosos y concretos.** Nadie necesita que le hagan un chiste mientras intenta entender una fuga de datos.
-
-## El panel
-
-La base de operaciones de Sancho. Desde aquí se configurará el servicio y se podrá ver qué está haciendo, qué ha encontrado y cuánto está costando.
-
-| Sección | Para qué servirá |
-| --- | --- |
-| **Inicio** | Revisiones recientes, trabajos pendientes, errores y consumo del mes. |
-| **Repositorios** | Ver los proyectos accesibles y elegir cuáles revisa Sancho. |
-| **Reglas** | Configuración general y ajustes por repositorio: contexto, exclusiones y criterios. |
-| **Revisiones** | Hallazgos, cobertura, commits analizados, duración y enlaces a Bitbucket. |
-| **IA y consumo** | Clave de OpenAI, modelo, consumo estimado y avisos de presupuesto. |
-| **Equipo** | Cuentas, roles y administración de accesos. |
-
-El administrador creará las cuentas; el equipo entrará con correo y contraseña. Todos los miembros tendrán visibilidad sobre los repositorios conectados.
-
-**El presupuesto mensual será un aviso, no un interruptor.** Al superar el umbral configurado, Sancho avisará y seguirá revisando. Los límites técnicos por trabajo impedirán bucles y ejecuciones interminables.
-
-### Una conexión, varios repositorios
-
-La integración se plantea mediante una cuenta de Bitbucket con acceso a los proyectos que se quieran revisar y permisos para comentar.
-
-Conectar una cuenta no activará todos sus repositorios: se elegirán desde el panel. Cada repositorio tendrá su webhook; la herramienta intentará configurarlo automáticamente cuando disponga de los permisos necesarios.
-
-La identidad recomendada es una cuenta técnica del equipo. Así los comentarios tendrán un autor reconocible y la conexión no dependerá de la cuenta personal de un empleado.
-
-## La primera expedición
-
-La primera versión está definida para:
-
-- **Bitbucket Cloud.**
-- **PHP, Symfony y Laravel** como primeros proyectos a revisar.
-- **OpenAI**, con una clave API del equipo.
-- Revisiones al abrir PR y con nuevos cambios, omitiendo borradores.
-- Un equipo con varios usuarios y acceso compartido a los proyectos.
-- Un VPS o servidor de empresa, desplegado con **Docker**.
-- Un volumen inicial previsto de hasta **10 revisiones al día**.
-
-Sancho informará y comentará. **La decisión de fusionar seguirá siendo del equipo.**
-
-La V1 analizará código sin ejecutar los proyectos revisados. No modificará archivos, generará commits, aprobará PR ni bloqueará fusiones. Tampoco afirmará haber ejecutado pruebas que solo ha leído.
-
-El código de Sancho vive en GitHub; los repositorios que revisará están en Bitbucket Cloud. Cada cosa en su alforja.
-
-## Bajo la armadura
-
-**Stack confirmado:** Node.js + TypeScript + Vue + PostgreSQL.
-
-La arquitectura propuesta separa el panel, la API y un proceso de revisión en segundo plano. PostgreSQL conservará configuración, historial, consumo y trabajos pendientes.
+## How it works
 
 ```mermaid
-flowchart TD
-    Panel["Panel Vue"] --> API["API Node.js / TypeScript"]
-    Bitbucket["Bitbucket Cloud"] -->|Eventos| API
-    API --> DB["PostgreSQL"]
-    Worker["Worker de revisión"] <-->|Trabajos y resultados| DB
-    Worker <-->|Contexto y comentarios| Bitbucket
-    Worker <-->|Análisis y verificación| IA["OpenAI"]
+flowchart LR
+    BB["Bitbucket Cloud"] -->|signed webhook| API["API · Node.js"]
+    Panel["Dashboard · Vue"] --> API
+    API --> DB[("PostgreSQL<br>job queue")]
+    Worker["Review worker"] <--> DB
+    Worker -->|task| Brain["Cerebro · Claude agent"]
+    Brain -->|checkout of the commit| BB
+    Worker -->|comments| BB
+    Worker -.->|alternative| AI["OpenAI"]
 ```
 
-Las credenciales permanecerán en el servidor. El código y los comentarios del repositorio se tratarán como datos, nunca como instrucciones capaces de ampliar permisos.
+1. **A pull request arrives.** Bitbucket sends a webhook; Sancho checks its signature and queues it.
+2. **The agent reviews it.** The `cerebro` service downloads the repository at the pull request commit and runs a Claude Agent SDK agent with the instructions in [`prompts/`](prompts/) and your team's rules. The agent reads what it needs, and **it can only read, and only inside that checkout**.
+3. **Another agent verifies it.** Every finding is checked against the code; the ones that do not hold up are dropped.
+4. **Sancho publishes.** Before commenting, it confirms the pull request has not changed. Then it posts the summary and the inline comments.
 
-El detalle está en la [arquitectura](docs/03-arquitectura.md) y el [motor de revisión](docs/04-revision.md).
+The agent uses the server's Claude subscription or an Anthropic key. As an alternative, Ajustes → Motor de revisión can send reviews straight to OpenAI. More in [docs/](docs/) (Spanish).
 
-## Hoja de ruta
+## Screenshots
 
-| Fase | Entrega prevista |
-| --- | --- |
-| **0 · Preparar las alforjas** | Base técnica, contratos y simuladores. |
-| **1 · Montar la posada** | Panel, cuentas, permisos y configuración. |
-| **2 · Conocer el camino** | Conexión con Bitbucket, repositorios y eventos. |
-| **3 · Aprender a mirar** | Revisiones visibles en el panel y evaluación de calidad. |
-| **4 · Tomar la palabra** | Publicación en PR, seguimiento y control de duplicados. |
-| **5 · Salir de expedición** | Despliegue, recuperación de errores y puesta en uso. |
-| **Después · Echar una mano** | Correcciones solicitadas desde los comentarios. |
+<table>
+  <tr>
+    <td width="50%"><img src="docs/img/panel.png" alt="Reviews dashboard: queue, reviews in progress, AI analyses and monthly spend, with recent activity."><br><sub><b>Dashboard.</b> What was reviewed, what is running and what you have spent.</sub></td>
+    <td width="50%"><img src="docs/img/revisiones.png" alt="Review history with tabs by result and each review's status in Bitbucket."><br><sub><b>Reviews.</b> Every pull request with its result and what was published.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/img/motor.png" alt="Settings, review engine: Claude agent connected through the subscription, or OpenAI."><br><sub><b>Review engine.</b> Claude agent on a subscription, an Anthropic key, or OpenAI.</sub></td>
+    <td><img src="docs/img/instrucciones.png" alt="Editor for the AI instructions with a selector for detection, verification and agent."><br><sub><b>AI instructions.</b> Editable from the dashboard, with version history.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/img/reglas.png" alt="Global and per-repository review rules."><br><sub><b>Team rules.</b> What to watch and what to ignore, globally and per repository.</sub></td>
+    <td><img src="docs/img/oscuro.png" alt="What a review covered, in dark mode, with the files the agent read."><br><sub><b>Dark mode.</b> And which files the agent opened in each review.</sub></td>
+  </tr>
+</table>
 
-Todas las fases de implementación están pendientes. El estado detallado se mantendrá en [PROGRESS.md](PROGRESS.md).
+<p align="center">
+  <img src="docs/img/movil-revisiones.png" alt="Review history on a phone, each review as a card." width="30%">
+  &nbsp;&nbsp;
+  <img src="docs/img/movil-detalle.png" alt="A review on a phone." width="30%">
+</p>
 
-### Después: «Sancho, arréglalo»
+## Installation
 
-La evolución prevista permitirá solicitar una corrección respondiendo a un hallazgo, por ejemplo:
+You need a server with **Docker Compose** and a public HTTPS address, so Bitbucket can send webhooks.
 
-```text
-/revisor corregir
+```bash
+git clone https://github.com/Dasge97/sancho.git
+cd sancho
+cp .env.example .env
 ```
 
-Sancho comprobaría que la persona está autorizada, trabajaría sobre el problema concreto en un entorno aislado y explicaría qué cambió y qué pudo verificar.
+Fill the `.env` with your own values:
 
-**El comando y la forma de entregar el cambio son propuestas, no funciones disponibles.** Antes de implementarlo se decidirá si añadir un commit a la rama o abrir una PR alternativa, y qué comprobaciones exigir.
+```bash
+openssl rand -hex 32      # POSTGRES_PASSWORD, SESSION_SECRET and CEREBRO_TOKEN
+openssl rand -base64 32   # SANCHO_ENCRYPTION_KEY (keep a copy off the server)
+```
 
-El alcance está en [Correcciones futuras](docs/08-correcciones.md).
+Set your domain in `PUBLIC_BASE_URL` and `CADDY_DOMAIN`, and the server's Claude Code session folder in `CLAUDE_DIR`. Then start it and create your account:
 
-Un escudero puede echar una mano. Darle las llaves del castillo sin mirar sería otra historia.
+```bash
+docker compose --profile production up --build -d
+docker compose exec api node dist-server/admin.js you@example.com 'a-password-of-12-or-more'
+```
 
-## Empezar a desarrollar
+The `production` profile adds Caddy, which gets the HTTPS certificate by itself. If you already have an HTTPS proxy, point it at `SANCHO_PORT` and start without the profile.
 
-Todavía no hay un comando de instalación de la aplicación. Esta entrega contiene la documentación con la que se va a construir.
+## Getting started
 
-1. Leer las [decisiones confirmadas y propuestas pendientes](docs/01-decisiones.md).
-2. Revisar el [plan por fases y tareas](docs/06-implementacion.md).
-3. Usar [HANDOFF.md](HANDOFF.md) como punto de entrada para el modelo implementador.
-4. Implementar una tarea, validar sus criterios y actualizar [PROGRESS.md](PROGRESS.md).
-5. Continuar con la siguiente entrega comprobable.
+1. **Ajustes → Bitbucket** (Settings): save the workspace, the Atlassian account email and an API token, then click «Probar conexión» (Test connection).
+2. **Ajustes → Motor de revisión** (Review engine): check that the Claude agent shows «Conectado» (Connected).
+3. **Ajustes → Reglas de revisión** (Review rules): tell Sancho what each project is about. Optional, but it improves results a lot.
+4. **Repositorios → Sincronizar con Bitbucket** (Repositories → Sync): enable the repositories you want and click «Instalar webhook».
+5. Open a pull request. Within a few minutes the review shows up under **Revisiones** (Reviews).
+6. Once you trust the comments, turn on **Ajustes → Publicación** (Publishing) so Sancho comments on its own. Until then, «Revisar y comentar» (Review and comment) publishes on demand.
 
-El modelo que implemente Sancho y el modelo OpenAI que revise las PR son elecciones independientes. El primero puede cambiar sin alterar el producto; el segundo se configurará y evaluará con ejemplos.
+**The Atlassian API token** is created at id.atlassian.com with "Create API token with scopes" and the Bitbucket app. It needs `read:repository`, `read:pullrequest`, `write:pullrequest`, `read:webhook` and `write:webhook`, and the account must administer the repositories. Comments are posted under that account's name, so a dedicated account for Sancho is a good idea.
 
-**La documentación busca que el agente tenga menos que adivinar y más que comprobar.**
+## Configuration
 
-## Documentación
-
-| Documento | Contenido |
+| Variable | What it does |
 | --- | --- |
-| [Decisiones y alcance](docs/01-decisiones.md) | Qué está cerrado y qué sigue siendo propuesta. |
-| [Panel y experiencia](docs/02-panel.md) | Pantallas, acciones, roles y estados. |
-| [Arquitectura](docs/03-arquitectura.md) | Componentes, integraciones y secretos. |
-| [Motor de revisión](docs/04-revision.md) | Contexto, verificación, comentarios y concurrencia. |
-| [Datos y contratos](docs/05-contratos.md) | Entidades, API interna y consumo. |
-| [Implementación](docs/06-implementacion.md) | Tareas, dependencias y criterios de aceptación. |
-| [Validación y operación](docs/07-validacion-operacion.md) | Pruebas, evaluación de calidad y despliegue. |
-| [Correcciones futuras](docs/08-correcciones.md) | Alcance posterior y decisiones pendientes. |
-| [Fuentes](docs/09-fuentes.md) | Referencias oficiales de las integraciones. |
-| [Instrucciones del implementador](HANDOFF.md) | Cómo avanzar sin perder las decisiones del proyecto. |
-| [Progreso](PROGRESS.md) | Estado real de cada fase. |
+| `POSTGRES_PASSWORD` | Database password. |
+| `SESSION_SECRET` | Signs dashboard sessions. |
+| `SANCHO_ENCRYPTION_KEY` | Encrypts stored credentials (32 bytes, base64). Without it, not even backups can be read. |
+| `PUBLIC_BASE_URL` | Public URL of the dashboard, for webhooks and the links in comments. |
+| `CADDY_DOMAIN` | Domain for the HTTPS certificate (`production` profile). |
+| `SESSION_COOKIE_SECURE` | `true` with HTTPS; `false` only locally. |
+| `CEREBRO_TOKEN` | Internal token between the worker and the agent. |
+| `CLAUDE_DIR` | The server's Claude Code session, so the agent runs on the subscription. |
+| `ANTHROPIC_API_KEY` | Optional: the agent uses this key (pay per use) instead of the subscription. |
+| `SANCHO_PORT` | Local dashboard port (default `3000`, bound to `127.0.0.1` only). |
+| `AI_EXCHANGE_RETENTION_DAYS` | Days to keep what was sent to the AI and its answer (default `30`). |
+
+## Security
+
+- **The agent only reads.** It never runs the reviewed code, writes files or reaches the internet; a filter rejects any path outside the repository checkout.
+- **Reviewed code is data, not instructions.** Whatever a file says does not change what Sancho does.
+- **Secrets never reach the AI.** Lines with keys or passwords are masked before anything is sent.
+- **Credentials are stored encrypted** (AES-256-GCM) and never sent back to the dashboard.
+- **Sancho does not decide for you.** It never uses the approve, decline or merge APIs.
+
+## Development
+
+```bash
+npm ci
+npm test                         # unit tests
+TEST_DATABASE_URL=postgres://… npm test   # plus the full flow with Bitbucket and the AI simulated
+docker compose exec api node dist-server/simulator.js   # sample data without connecting anything
+```
+
+To see what was sent to the AI in a review: `docker compose exec api node dist-server/ai-log.js [review-id]`.
+Backups: `sh scripts/backup.sh` and `sh scripts/restore.sh <file.dump>`.
+
+## Documentation
+
+In Spanish: [Decisions](docs/01-decisiones.md) · [Dashboard](docs/02-panel.md) · [Architecture](docs/03-arquitectura.md) · [Review engine](docs/04-revision.md) · [Data and contracts](docs/05-contratos.md) · [Validation and operations](docs/07-validacion-operacion.md) · [Future fixes](docs/08-correcciones.md) · [Progress](PROGRESS.md)
+
+## License
+
+No license yet. Until one is published, the code is visible but all rights are reserved.
 
 ---
 
 <div align="center">
 
-**Sancho. El sentido común también merece un sitio en la pull request.**
+<img src="src/web/public/sancho-mark-96.png" alt="" width="48">
 
-*«Con su permiso: eso no es un gigante. Es un null sin comprobar.»*
+**Sancho. Common sense deserves a seat in the pull request too.**
+
+<sub><i>"With your permission: that is not a giant. It is an unchecked null."</i></sub>
 
 </div>

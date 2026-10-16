@@ -4,7 +4,7 @@
 
 | ID | Decisión |
 | --- | --- |
-| D01 | Planificar y documentar ahora; implementar después con otro modelo más barato. |
+| D01 | Planificación inicial seguida de autorización expresa para implementar la V1 en este repositorio (15-10-2026). |
 | D02 | Bitbucket Cloud, en bitbucket.org. |
 | D03 | Panel central para toda la configuración habitual y consulta de datos. |
 | D04 | Uso por varias personas del mismo equipo. |
@@ -22,6 +22,10 @@
 | D16 | Futuro deseado: ordenar una corrección desde un comentario de la PR. |
 | D17 | Stack confirmado: Node.js + TypeScript + Vue + PostgreSQL. |
 | D18 | Nombre del producto: Sancho. Repositorio de desarrollo: Dasge97/sancho en GitHub; integración de revisión: Bitbucket Cloud. |
+| D19 | Las instrucciones del modelo viven en `prompts/` y administración añade reglas generales y por repositorio desde Ajustes → Reglas de revisión (16-10-2026). |
+| D22 | Las instrucciones de la IA (detección, verificación y agente) se editan desde Ajustes → Instrucciones de la IA. Cada cambio es una versión con autor y fecha en `prompt_versions`; los originales de `prompts/` siguen siendo el punto de partida y se pueden restaurar. El formato de la respuesta lo fija el servidor (16-10-2026). |
+| D21 | Motor de revisión: un agente del Claude Agent SDK en el servicio interno `cerebro`, con la sesión de suscripción de Claude del servidor (la misma que usa podcaster). El agente decide qué leer con las herramientas del propio SDK; en revisión, solo `Read`, `Grep` y `Glob` dentro de una copia del repositorio en el commit de la PR. OpenAI se mantiene como alternativa en Ajustes. Sustituye a D07 como motor por defecto. El mismo motor servirá para las correcciones (fase 6) con herramientas de escritura (16-10-2026). |
+| D20 | Se guarda en el servidor lo que se envía al modelo y su respuesta en cada revisión, para poder auditarla. Sin pantalla en el panel: solo por consola (`dist-server/ai-log.js`). Se borra a los 30 días (`AI_EXCHANGE_RETENTION_DAYS`) y lleva los secretos ya ocultados. Cambia la regla 9 de AGENTS.md (16-10-2026). |
 
 ## Propuestas de diseño, todavía no confirmadas expresamente
 
@@ -55,3 +59,7 @@ Un administrador configura conexiones y activa un repositorio desde el panel; un
 Correcciones, escritura de código, aprobación o rechazo automático, merge, bloqueo de ramas, facturación SaaS, empresas aisladas, login federado, permisos individuales por repositorio, chat general, extensión IDE, GitHub/GitLab y avisos por correo o Slack.
 
 Excluir una capacidad de V1 no equivale a prohibirla en el producto futuro.
+
+## Cambio de alcance registrado
+
+El usuario pidió «revisa este proyecto, e implementalo entero» el 15 de octubre de 2026. Esta instrucción actualiza D01 y autoriza implementar la V1 especificada. Las reglas de no desplegar, no publicar cambios remotos, no modificar código de repositorios revisados y no aprobar o fusionar PR permanecen vigentes.

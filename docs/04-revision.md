@@ -32,6 +32,16 @@ Topes iniciales propuestos y editables: 60 archivos modificados, 250 KB por arch
 
 ## 3. Detección
 
+**Implementación (16-10-2026).** Las instrucciones del modelo están en `prompts/deteccion.md` y `prompts/verificacion.md`, versionadas con el código. Se envían en el campo `instructions` de la API de OpenAI; el diff y el contexto van en `input`, dentro de las etiquetas `<pull_request>`, `<diff>` y `<contexto>`, como datos no confiables. Cada línea del diff lleva su número en el fichero nuevo (`+L28|` añadida, ` L27|` sin cambios) para que el modelo no tenga que calcularlo.
+
+Al final de las instrucciones se añaden, si existen, las reglas de Ajustes → Reglas de revisión: de qué va el proyecto, reglas generales y reglas del repositorio. La huella de las instrucciones completas se guarda en la cobertura de cada revisión (`prompt_version`).
+
+Contexto que recibe el modelo (`src/context.ts`): hasta 8 ficheros cambiados (16 KB cada uno) y hasta 8 relacionados (12 KB cada uno), con un máximo de 60 000 caracteres. Los relacionados son las clases importadas con `use` y resueltas con el autoload PSR-4 de `composer.json`, la política de Laravel de cada modelo usado y, si cambia un controlador, los ficheros de rutas y `config/packages/security.yaml`. Todo pasa por el ocultado de secretos. Si se recorta algo, la revisión queda como parcial.
+
+Las tres instrucciones se pueden sustituir desde Ajustes → Instrucciones de la IA (D22); la versión activa es la última guardada en `prompt_versions`, y una versión vacía vuelve al fichero original.
+
+La verificación devuelve, además de la decisión, la gravedad que considera correcta; se publica esa. Lo enviado y la respuesta de cada llamada se guardan en `ai_exchanges` (D20) y se consultan con `node dist-server/ai-log.js [id-de-revisión]`.
+
 Prioridades: errores introducidos o agravados por la PR, controles de autorización, separación de clientes/usuarios, validación, SQL inseguro, transacciones, migraciones, compatibilidad con versiones presentes y regresiones demostrables.
 
 No informar fallos antiguos sin conexión con la PR, preferencias personales, falta de tests genérica ni problemas que requieren suposiciones no sustentadas.
@@ -59,14 +69,15 @@ No usar un porcentaje inventado de confianza como único filtro. Si falta contex
 
 Un resumen del bot por PR, actualizado: commit revisado, alcance, hallazgos, limitaciones y estado. No afirmar «PR segura» ni aprobar automáticamente.
 
-Comentario en línea propuesto:
+Comentario en línea (decidido el 16-10-2026: breve, tres líneas; el detalle completo queda en el panel):
 
-    [Alta · Autorización] Falta comprobar el propietario del registro
-    En esta ruta, un usuario autenticado puede solicitar un registro ajeno
-    mediante su identificador. El método mostrado consulta por ID y no
-    aplica la política de acceso usada en las demás rutas relacionadas.
-    Impacto: acceso a datos de otro usuario.
-    Propuesta: aplicar la autorización antes de devolver el recurso.
+    🔴 **Registro ajeno accesible por su id**
+    Un usuario autenticado puede leer registros de otras personas cambiando el id.
+    **Arreglo:** aplica la política de autorización antes de devolverlo. · [Detalle](enlace al panel)
+
+Resumen de la PR: índice numerado con gravedad, título corto y `fichero:línea`, sin repetir el texto de los comentarios; una línea final con ficheros revisados, commit y enlace a la revisión completa. Sin hallazgos, una sola línea. Si la revisión fue parcial, una línea de aviso. 🔴 = crítico o alto; 🟠 = medio.
+
+El modelo devuelve campos cortos (`short_title` ≤ 60, `short_impact` ≤ 140, `short_fix` ≤ 140 caracteres) además del detalle largo; el servidor los recorta si se pasan. La marca para reconocer comentarios propios va en los parámetros del enlace «Detalle», porque Bitbucket muestra los comentarios HTML como texto.
 
 Es un ejemplo ficticio, no un hallazgo real. Los comentarios definitivos deben contener evidencia del proyecto concreto.
 

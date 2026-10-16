@@ -1,0 +1,3 @@
+import bcrypt from 'bcryptjs'; import {pool,migrate} from './db.js';
+const [email,password]=process.argv.slice(2); if(!email||!password||password.length<12){console.error('Uso: npm run admin:create -- correo contraseña (mínimo 12 caracteres)'); process.exit(1)}
+await migrate(); const h=await bcrypt.hash(password,12); await pool.query("INSERT INTO users(email,password_hash,role) VALUES($1,$2,'admin') ON CONFLICT(email) DO UPDATE SET password_hash=EXCLUDED.password_hash,role='admin',active=true",[email.trim().toLowerCase(),h]); console.log(`Administrador listo: ${email.trim().toLowerCase()}`); await pool.end();
