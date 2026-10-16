@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // Detalle de una revisión: estado, hallazgos con su explicación completa, qué se revisó
 // (cobertura) y su consumo. Mientras está en cola o analizándose, se actualiza sola.
-import {computed, onBeforeUnmount, ref, watch} from 'vue';
+import {computed, nextTick, onBeforeUnmount, ref, watch} from 'vue';
 import {ExternalLink, Loader2, ThumbsDown, ThumbsUp} from 'lucide-vue-next';
 import {api, errorMessage, post} from '../lib/api';
 import {category, dateTime, int, publicationState, reviewState, severity, usd} from '../lib/format';
-import {askText, crumbTail, notify, route, setTab} from '../lib/ui-state';
+import {askText, crumbTail, notify, pendingVote, route, setTab} from '../lib/ui-state';
 import PageHeader from '../ui/PageHeader.vue';
 import UiBadge from '../ui/UiBadge.vue';
 import UiButton from '../ui/UiButton.vue';
@@ -42,6 +42,19 @@ async function load() {
   try { data.value = await api(`/reviews/${props.id}`); error.value = ''; crumbTail.value = `#${data.value.run.number} · ${data.value.run.title}`; }
   catch (e) { error.value = errorMessage(e); }
   if (running.value) timer = setTimeout(load, 3000);
+  applyPendingVote();
+}
+// Voto que llega desde un enlace de Bitbucket: se aplica una vez, al hallazgo con esa huella.
+async function applyPendingVote() {
+  const pending = pendingVote.value;
+  if (!pending || !data.value) return;
+  pendingVote.value = null;
+  const f = data.value.findings.find((x: any) => x.fingerprint === pending.fingerprint);
+  if (!f) { notify('warning', 'No encuentro ese problema', 'Puede que la PR haya cambiado. Vota desde la lista de problemas.'); return; }
+  setTab('problemas');
+  await nextTick();
+  document.getElementById('hallazgo-' + f.id)?.scrollIntoView({block: 'center'});
+  await vote(f.id, pending.vote);
 }
 watch(() => props.id, () => { data.value = null; load(); }, {immediate: true});
 onBeforeUnmount(() => clearTimeout(timer));
@@ -114,7 +127,7 @@ async function vote(findingId: string, value: 'useful' | 'false_positive') {
       <UiCard v-if="tab === 'problemas'" title="Problemas encontrados" description="Cada problema está verificado contra el código que añade la pull request, en la línea exacta.">
         <UiEmpty v-if="!data.findings.length" :title="running ? 'Analizando el código…' : 'Ningún problema a la vista'" :text="running ? 'Los problemas aparecerán aquí en cuanto termine.' : 'Sancho no ha encontrado problemas en lo que ha revisado. En «Qué se ha revisado» tienes el alcance exacto.'" />
         <ol v-else class="findings">
-          <li v-for="f in data.findings" :key="f.id" class="finding" :class="f.severity">
+          <li v-for="f in data.findings" :id="'hallazgo-' + f.id" :key="f.id" class="finding" :class="f.severity">
             <div class="finding-head">
               <UiBadge :tone="severity(f.severity)[1]">{{ severity(f.severity)[0] }}</UiBadge>
               <span class="cat">{{ category(f.category) }}</span>

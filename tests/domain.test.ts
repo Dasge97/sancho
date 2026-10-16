@@ -42,19 +42,33 @@ describe('webhook security and idempotency contracts',()=>{
   const finding={severity:'high',title:'Inyección SQL mediante el parámetro de búsqueda en el controlador',path:'app/Http/Controllers/InvoiceController.php',start_line:28,impact:'Permite eludir el filtro. Texto largo que solo va al panel.',recommendation:'Usar parámetros enlazados. Más detalle.',short_title:'Inyección SQL en la búsqueda',short_impact:'q va tal cual al SQL; se leen facturas ajenas.',short_fix:'Usa parámetros enlazados.'};
   it('renders short inline comments with the marker hidden in the detail link',()=>{
     const link=sanchoLink('https://sancho.test/',{review:'run-1','sancho-finding':'abc'});
-    const raw=renderInlineComment(finding,link);
-    expect(raw).toBe('🔴 **Inyección SQL en la búsqueda**\n\nq va tal cual al SQL; se leen facturas ajenas.\n\n**Arreglo:** Usa parámetros enlazados. · [Detalle](https://sancho.test/?review=run-1&sancho-finding=abc)');
+    const raw=renderInlineComment({...finding,category:'security'},link);
+    expect(raw).toBe([
+      '| 🟠 **Alto** | Seguridad · `InvoiceController.php:28` |','| --- | --- |',
+      '| **Problema** | Inyección SQL en la búsqueda |','| **Por qué importa** | q va tal cual al SQL; se leen facturas ajenas. |','| **Arreglo** | Usa parámetros enlazados. |',
+      '','**[🔍 Ver detalle](https://sancho.test/?review=run-1&sancho-finding=abc)** &nbsp;·&nbsp; **[👍 Me ha servido](https://sancho.test/?review=run-1&sancho-finding=abc&votar=util)** &nbsp;·&nbsp; **[👎 Es un falso positivo](https://sancho.test/?review=run-1&sancho-finding=abc&votar=falso)**',
+    ].join('\n'));
     expect(raw).not.toContain('<!--');
     // Hallazgos anteriores sin campos cortos: primera frase de los textos largos.
-    expect(renderInlineComment({...finding,short_title:null,short_impact:null,short_fix:null},link)).toContain('Permite eludir el filtro.\n\n**Arreglo:** Usar parámetros enlazados.');
+    const old=renderInlineComment({...finding,short_title:null,short_impact:null,short_fix:null},link);
+    expect(old).toContain('| **Por qué importa** | Permite eludir el filtro. |');
+    expect(old).toContain('| **Arreglo** | Usar parámetros enlazados. |');
+    // Una barra vertical en el texto no rompe la tabla.
+    expect(renderInlineComment({...finding,short_fix:'Usa a | b.'},link)).toContain('| **Arreglo** | Usa a \\| b. |');
   });
   it('renders the summary as an index without repeating comment bodies',()=>{
     const summary=renderSummary({findings:[finding,{...finding,severity:'medium',short_title:'Otro',start_line:40}],filesReviewed:2,commit:'abcdef1234',partial:null,reviewUrl:'https://sancho.test/?review=run-1&sancho-summary=run-1'});
-    expect(summary).toBe('**Sancho · 2 problemas** (1 alto, 1 medio)\n\n**Problemas**\n\n1. 🔴 Inyección SQL en la búsqueda · `InvoiceController.php:28`\n2. 🟠 Otro · `InvoiceController.php:40`\n\n2 ficheros revisados · commit `abcdef1` · [Ver revisión completa](https://sancho.test/?review=run-1&sancho-summary=run-1)');
+    expect(summary).toBe([
+      '### Sancho · 2 problemas por revisar','','| 🔴 Críticos | 🟠 Altos | 🟡 Medios | ✅ Resueltos |','| :---: | :---: | :---: | :---: |','| 0 | **1** | **1** | 0 |','',
+      '1. 🟠 **Inyección SQL en la búsqueda** · `InvoiceController.php:28`','2. 🟡 **Otro** · `InvoiceController.php:40`','',
+      '<sub>2 ficheros revisados · commit `abcdef1` · [Ver la revisión completa](https://sancho.test/?review=run-1&sancho-summary=run-1)</sub>',
+    ].join('\n'));
     expect(summary).not.toContain('eludir');
-    expect(renderSummary({findings:[],filesReviewed:1,commit:'abcdef1',partial:'Límite de tamaño alcanzado.',reviewUrl:'https://s.test/'})).toBe('**Sancho · sin problemas encontrados**\n\n⚠️ Revisión parcial: Límite de tamaño alcanzado.\n\n1 fichero revisado · commit `abcdef1` · [Ver revisión completa](https://s.test/)');
+    expect(renderSummary({findings:[],filesReviewed:1,commit:'abcdef1',partial:'Límite de tamaño alcanzado.',reviewUrl:'https://s.test/'})).toBe('### Sancho · sin problemas encontrados\n\n⚠️ Revisión parcial: Límite de tamaño alcanzado.\n\n<sub>1 fichero revisado · commit `abcdef1` · [Ver la revisión completa](https://s.test/)</sub>');
+    // Sin problemas pendientes pero con comentarios ya arreglados: el contador lo dice.
+    expect(renderSummary({findings:[],resolved:2,filesReviewed:1,commit:'abcdef1',partial:null,reviewUrl:'https://s.test/'})).toContain('| 0 | 0 | 0 | **2** |');
     const many=Array.from({length:10},(_,i)=>({...finding,start_line:i+1}));
-    expect(renderSummary({findings:many,filesReviewed:1,commit:'abcdef1',partial:null,reviewUrl:'https://s.test/'})).toContain('(10 altos)');
+    expect(renderSummary({findings:many,filesReviewed:1,commit:'abcdef1',partial:null,reviewUrl:'https://s.test/'})).toContain('| 0 | **10** | 0 | 0 |');
     expect(renderSummary({findings:many,filesReviewed:1,commit:'abcdef1',partial:null,reviewUrl:'https://s.test/'})).toContain('Y 2 más en el panel.');
   });
   it('clips long model text to one line without cutting words',()=>{
@@ -92,7 +106,7 @@ describe('Bitbucket Cloud payloads and publication policy',()=>{
 describe('PR summary with walkthrough and changes',()=>{
   it('explains the PR and lists the changes per file before the problems',()=>{
     const summary=renderSummary({findings:[],filesReviewed:2,commit:'abcdef1234',partial:null,reviewUrl:'https://s.test/',walkthrough:'Añade la búsqueda de facturas.',changes:[{path:'app/A.php',summary:'Nuevo método search | con filtro.'},{path:'routes/web.php',summary:'Ruta /invoices/search.'}]});
-    expect(summary.startsWith('**Sancho · sin problemas encontrados**\n\n**Qué hace esta PR.** Añade la búsqueda de facturas.')).toBe(true);
+    expect(summary.startsWith('### Sancho · sin problemas encontrados\n\n**Qué hace esta PR.** Añade la búsqueda de facturas.')).toBe(true);
     expect(summary).toContain('| Fichero | Qué cambia |');
     expect(summary).toContain('| `app/A.php` | Nuevo método search \\| con filtro. |');
     const many=Array.from({length:18},(_,i)=>({path:`f${i}.php`,summary:'Cambio.'}));
@@ -120,6 +134,7 @@ describe('code suggestions',()=>{
   });
   it('adds the suggestion block at the end of the inline comment',()=>{
     const raw=renderInlineComment({severity:'high',title:'T',path:'app/A.php',start_line:2,impact:'I',recommendation:'R',suggestion:'    return 1;'},'https://sancho.test/#/x');
-    expect(raw.endsWith('\n\n```suggestion\n    return 1;\n```')).toBe(true);
+    // La sugerencia va justo después de la tabla, antes de los enlaces.
+    expect(raw).toContain('| **Arreglo** | R |\n\n```suggestion\n    return 1;\n```\n\n**[🔍 Ver detalle]');
   });
 });

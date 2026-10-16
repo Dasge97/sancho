@@ -5,7 +5,7 @@ import {computed, onMounted, ref, watch, type Component} from 'vue';
 import {ChevronRight, CircleDollarSign, FolderGit2, Gauge, History, LayoutDashboard, LogOut, Menu, Monitor, Moon, ScanSearch, Settings, Sun, Users, X} from 'lucide-vue-next';
 import {api, post} from './lib/api';
 import {isAdmin, user, type User} from './lib/session';
-import {crumbTail, go, route, setTheme, theme, type ThemeChoice, type ViewName} from './lib/ui-state';
+import {crumbTail, go, pendingVote, route, setTheme, theme, type ThemeChoice, type ViewName} from './lib/ui-state';
 import UiButton from './ui/UiButton.vue';
 import UiDialog from './ui/UiDialog.vue';
 import UiToasts from './ui/UiToasts.vue';
@@ -63,9 +63,12 @@ watch(() => route.view, () => { menuOpen.value = false; crumbTail.value = ''; wi
 window.addEventListener('keydown', e => { if (e.key === 'Escape') menuOpen.value = false; });
 
 // Los enlaces «Detalle» de los comentarios de Bitbucket llegan con ?review=<id>.
+// Los de voto añaden &votar=util o &votar=falso, con la huella del hallazgo en sancho-finding.
 function openLinkedReview() {
-  const id = new URLSearchParams(location.search).get('review');
+  const params = new URLSearchParams(location.search), id = params.get('review');
   if (!id) return;
+  const vote = params.get('votar'), fingerprint = params.get('sancho-finding');
+  if (fingerprint && (vote === 'util' || vote === 'falso')) pendingVote.value = {fingerprint, vote: vote === 'util' ? 'useful' : 'false_positive'};
   history.replaceState({}, '', location.pathname);
   go('revision', id);
 }

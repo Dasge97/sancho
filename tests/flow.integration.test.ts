@@ -151,7 +151,9 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     const posts=calls.filter(c=>c.method==='POST'&&c.url.endsWith('/pullrequests/42/comments'));
     expect(posts).toHaveLength(2);
     expect(posts[0].body.inline).toEqual({path:'src/Controller.php',to:2});
-    expect(posts[0].body.content.raw.startsWith('🔴 **Factura ajena accesible por id**')).toBe(true);
+    expect(posts[0].body.content.raw.startsWith('| 🔴 **Crítico** | Autorización · `Controller.php:2` |')).toBe(true);
+    expect(posts[0].body.content.raw).toContain('| **Problema** | Factura ajena accesible por id |');
+    expect(posts[0].body.content.raw).toContain('&votar=falso)');
     expect(posts[0].body.content.raw).toContain('sancho-finding=');
     expect(posts[0].body.content.raw).toContain("```suggestion\n$invoice = $repo->find($id);\n$this->authorize('view', $invoice);\nreturn $this->json($invoice);\n```");
     expect((await pool.query("SELECT suggestion FROM findings LIMIT 1")).rows[0].suggestion).toContain('authorize');
@@ -275,7 +277,7 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     await sendWebhook('pullrequest:updated',{pullrequest:remote[49]});await drainQueue();
     detectionOverride=null;
     const summary=calls.filter(c=>c.url.includes('/pullrequests/49/comments')&&['POST','PUT'].includes(c.method)&&c.body?.content?.raw?.includes('sancho-summary=')).at(-1)!;
-    expect(summary.body.content.raw).toContain('**Sancho · 1 problema**');
+    expect(summary.body.content.raw).toContain('### Sancho · 1 problema por revisar');
     expect(summary.body.content.raw).not.toContain('sin problemas encontrados');
   });
 

@@ -86,3 +86,6 @@ export function setTab(tab: string) {
 
 /** Último tramo de las migas de pan cuando la pantalla lo conoce después de cargar (el título de la PR). */
 export const crumbTail = ref('');
+// Voto que llega desde un enlace de un comentario en Bitbucket («Me ha servido» o «Es un falso
+// positivo»). La pantalla de la revisión lo aplica al hallazgo con esa huella al cargar.
+export const pendingVote = ref<{fingerprint: string; vote: 'useful' | 'false_positive'} | null>(null);

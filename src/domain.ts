@@ -18,7 +18,7 @@ export function findingFingerprint(repositoryId: string, prNumber: number, findi
   return crypto.createHash('sha256').update(`${repositoryId}:${prNumber}:${finding.path}:${finding.category}:${title}`).digest('hex');
 }
 
-export type PublishedFinding={severity:string;title:string;path:string;start_line:number|null;impact:string;recommendation:string;short_title?:string|null;short_impact?:string|null;short_fix?:string|null;suggestion?:string|null};
+export type PublishedFinding={severity:string;title:string;path:string;start_line:number|null;impact:string;recommendation:string;short_title?:string|null;short_impact?:string|null;short_fix?:string|null;suggestion?:string|null;category?:string|null};
 
 // Recorta a un máximo de caracteres, en una sola línea y sin partir palabras.
 export function clip(text:string,max:number):string {
@@ -28,8 +28,6 @@ export function clip(text:string,max:number):string {
   return (space>max*0.6?cut.slice(0,space):cut).replace(/[\s.,;:]+$/,'')+'…';
 }
 function firstSentence(text:string):string {const m=String(text||'').match(/^.+?[.!?](?=\s|$)/s);return m?m[0]:String(text||'')}
-const SEVERITY_ICON:Record<string,string>={critical:'🔴',high:'🔴',medium:'🟠'};
-const SEVERITY_WORD:Record<string,[string,string]>={critical:['crítico','críticos'],high:['alto','altos'],medium:['medio','medios']};
 const code=(text:string)=>'`'+text+'`';
 
 // Textos cortos del comentario. Un hallazgo sin campos cortos (anterior a este formato) usa la primera frase de los largos.
@@ -42,11 +40,23 @@ export function sanchoLink(base:string,params:Record<string,string>):string {
   const url=new URL(base);for(const [k,v] of Object.entries(params))url.searchParams.set(k,v);return url.toString();
 }
 
+// Formato de los comentarios (formato B): gravedad con su color, una tabla con el problema, por qué
+// importa y el arreglo, la sugerencia de código y tres enlaces al panel (detalle y los dos votos).
+const SEVERITY_LABEL:Record<string,[string,string,string]>={critical:['🔴','Crítico','Críticos'],high:['🟠','Alto','Altos'],medium:['🟡','Medio','Medios']};
+const CATEGORY_LABEL:Record<string,string>={security:'Seguridad',authorization:'Autorización',correctness:'Funcionamiento',data_integrity:'Integridad de datos',performance:'Rendimiento',compatibility:'Compatibilidad',other:'Otro'};
+// Una celda de tabla en una línea y sin barras verticales sueltas.
+const cell=(t:string)=>String(t||'').replace(/\|/g,'\\|').replace(/\s+/g,' ').trim();
+
 export function renderInlineComment(f:PublishedFinding,detailUrl:string):string {
-  const s=shortFinding(f);
+  const s=shortFinding(f),[icon,word]=SEVERITY_LABEL[f.severity]||SEVERITY_LABEL.medium;
+  const where=code((f.path.split('/').pop()||f.path)+(f.start_line?':'+f.start_line:''));
+  const vote=(v:string)=>{const u=new URL(detailUrl);u.searchParams.set('votar',v);return u.toString()};
+  const table=[`| ${icon} **${word}** | ${cell(CATEGORY_LABEL[f.category||'']||'Problema')} · ${where} |`,'| --- | --- |',
+    `| **Problema** | ${cell(s.title)} |`,`| **Por qué importa** | ${cell(s.impact)} |`,`| **Arreglo** | ${cell(s.fix)} |`].join('\n');
   // Con sugerencia, Bitbucket muestra el cambio propuesto sobre la línea comentada.
   const suggestion=f.suggestion?`\n\n\`\`\`suggestion\n${f.suggestion}\n\`\`\``:'';
-  return `${SEVERITY_ICON[f.severity]||'🟠'} **${s.title}**\n\n${s.impact}\n\n**Arreglo:** ${s.fix} · [Detalle](${detailUrl})${suggestion}`;
+  const links=`**[🔍 Ver detalle](${detailUrl})** &nbsp;·&nbsp; **[👍 Me ha servido](${vote('util')})** &nbsp;·&nbsp; **[👎 Es un falso positivo](${vote('falso')})**`;
+  return `${table}${suggestion}\n\n${links}`;
 }
 
 // Tabla de cambios por fichero del resumen (como mucho `limit` filas). Las barras verticales del
@@ -61,17 +71,19 @@ function changesTable(changes:{path:string;summary:string}[],limit=15):string {
 
 // Resumen de la PR: qué hace, qué cambia por fichero y el índice de problemas (ordenados por
 // gravedad, máximo `limit`), sin repetir el texto de los comentarios en línea.
-export function renderSummary(input:{findings:PublishedFinding[];limit?:number;filesReviewed:number;commit:string;partial:string|null;reviewUrl:string;walkthrough?:string|null;changes?:{path:string;summary:string}[]}):string {
-  const all=input.findings,total=all.length,findings=all.slice(0,input.limit??8),hiddenCount=total-findings.length;
-  const counts=['critical','high','medium'].map(sev=>{const n=all.filter(x=>x.severity===sev).length;return n?`${n} ${SEVERITY_WORD[sev][n===1?0:1]}`:''}).filter(Boolean).join(', ');
-  const footer=`${input.filesReviewed} ${input.filesReviewed===1?'fichero revisado':'ficheros revisados'} · commit ${code(input.commit.slice(0,7))} · [Ver revisión completa](${input.reviewUrl})`;
+export function renderSummary(input:{findings:PublishedFinding[];limit?:number;filesReviewed:number;commit:string;partial:string|null;reviewUrl:string;walkthrough?:string|null;changes?:{path:string;summary:string}[];resolved?:number}):string {
+  const all=input.findings,total=all.length,findings=all.slice(0,input.limit??8),hiddenCount=total-findings.length,resolved=input.resolved||0;
+  const footer=`<sub>${input.filesReviewed} ${input.filesReviewed===1?'fichero revisado':'ficheros revisados'} · commit ${code(input.commit.slice(0,7))} · [Ver la revisión completa](${input.reviewUrl})</sub>`;
   const partial=input.partial?`\n\n⚠️ Revisión parcial: ${clip(input.partial,160)}`:'';
   const about=[input.walkthrough?.trim()?`**Qué hace esta PR.** ${input.walkthrough.trim()}`:'',changesTable(input.changes||[])].filter(Boolean).join('\n\n');
   const aboutBlock=about?`\n\n${about}`:'';
-  if(!total)return `**Sancho · sin problemas encontrados**${aboutBlock}${partial}\n\n${footer}`;
-  const list=findings.map((f,i)=>`${i+1}. ${SEVERITY_ICON[f.severity]||'🟠'} ${shortFinding(f).title} · ${code((f.path.split('/').pop()||f.path)+(f.start_line?':'+f.start_line:''))}`).join('\n');
+  // Contador por gravedad, y cuántos comentarios anteriores se han arreglado ya en la PR.
+  const n=(sev:string)=>all.filter(x=>x.severity===sev).length;
+  const counter=total||resolved?`\n\n| 🔴 Críticos | 🟠 Altos | 🟡 Medios | ✅ Resueltos |\n| :---: | :---: | :---: | :---: |\n| ${[n('critical'),n('high'),n('medium'),resolved].map(x=>x?`**${x}**`:'0').join(' | ')} |`:'';
+  if(!total)return `### Sancho · sin problemas encontrados${counter}${aboutBlock}${partial}\n\n${footer}`;
+  const list=findings.map((f,i)=>`${i+1}. ${(SEVERITY_LABEL[f.severity]||SEVERITY_LABEL.medium)[0]} **${shortFinding(f).title}** · ${code((f.path.split('/').pop()||f.path)+(f.start_line?':'+f.start_line:''))}`).join('\n');
   const more=hiddenCount?`\n\nY ${hiddenCount} más en el panel.`:'';
-  return `**Sancho · ${total} ${total===1?'problema':'problemas'}**${counts?` (${counts})`:''}${aboutBlock}\n\n**Problemas**\n\n${list}${more}${partial}\n\n${footer}`;
+  return `### Sancho · ${total} ${total===1?'problema':'problemas'} por revisar${counter}${aboutBlock}\n\n${list}${more}${partial}\n\n${footer}`;
 }
 
 export function shouldReviewWebhook(event:string, payload:any):boolean {
