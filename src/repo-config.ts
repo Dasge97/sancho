@@ -11,6 +11,9 @@
 //     - "legacy/**"
 //   gravedad_minima: high  low, medium, high o critical
 //   perfil: exigente       estandar (solo problemas) o exigente (también detalles menores)
+//   comprobaciones:        lo que el equipo quiere comprobar antes de fusionar
+//     - nombre: Migraciones reversibles
+//       descripcion: Toda migración nueva tiene un método down() que deshace el cambio.
 import {parse} from 'yaml';
 import {z} from 'zod';
 
@@ -21,6 +24,7 @@ const Schema = z.object({
   excluir: z.array(z.string().min(1).max(250)).max(50).optional(),
   gravedad_minima: z.enum(['low', 'medium', 'high', 'critical']).optional(),
   perfil: z.enum(['estandar', 'exigente']).optional(),
+  comprobaciones: z.array(z.object({nombre: z.string().min(1).max(80), descripcion: z.string().min(1).max(500)})).max(15).optional(),
 }).strict();
 export type RepoConfig = z.infer<typeof Schema>;
 

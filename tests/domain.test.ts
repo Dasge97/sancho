@@ -149,3 +149,20 @@ describe('review profiles',()=>{
     expect(renderSummary({findings:[{...low,severity:'high'}],filesReviewed:1,commit:'abcdef1',partial:null,reviewUrl:'https://s.test/'})).not.toContain('Menores');
   });
 });
+
+describe('summary extras',()=>{
+  it('adds effort, merge checks and related pull requests only when there is something to show',()=>{
+    const base={findings:[],filesReviewed:1,commit:'abcdef1',partial:null,reviewUrl:'https://s.test/',walkthrough:'Añade la búsqueda.'};
+    const s=renderSummary({...base,effort:{level:2,minutes:10,reason:'Un controlador nuevo.'},
+      checks:[{name:'Migraciones reversibles',status:'no_aplica',reason:'No hay migraciones.'},{name:'Tests',status:'no_cumple',reason:'No añade pruebas | ninguna.'}],
+      related:[{number:7,title:'Borrar factura',url:'https://bb.test/7',files:['app/Http/Controllers/InvoiceController.php']}]});
+    expect(s).toContain('**Qué hace esta PR.** Añade la búsqueda.\n\n**Esfuerzo de revisión:** 2 de 5 · unos 10 min · Un controlador nuevo.');
+    expect(s).toContain('| ➖ | Migraciones reversibles | **No aplica**. No hay migraciones. |');
+    expect(s).toContain('| ❌ | Tests | **No cumple**. No añade pruebas \\| ninguna. |');
+    expect(s).toContain('- [#7 Borrar factura](https://bb.test/7) · `InvoiceController.php`');
+    const plain=renderSummary(base);
+    expect(plain).not.toContain('Esfuerzo');
+    expect(plain).not.toContain('Comprobaciones');
+    expect(plain).not.toContain('PR abiertas');
+  });
+});

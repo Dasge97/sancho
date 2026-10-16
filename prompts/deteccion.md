@@ -141,5 +141,11 @@ Además de los problemas, explica la PR a quien la va a revisar, aunque no encue
 - `changes`: una entrada por fichero cambiado (como mucho 25, los más importantes primero), con
   `path` tal como sale en el diff y `summary`, una frase de como mucho 120 caracteres con lo que
   cambia en ese fichero.
+- `effort`: lo que le costará a una persona revisar la PR. `level` del 1 (trivial: documentación,
+  un cambio de una línea) al 5 (muy laborioso: mucha lógica nueva, seguridad o datos delicados),
+  `minutes` estimados y `reason` en una frase.
+- `checks`: si al final de estas instrucciones hay una sección «Comprobaciones antes de fusionar»,
+  una entrada por cada comprobación, con su `name` exacto, `status` (`cumple`, `no_cumple` o
+  `no_aplica`) y `reason` en una frase con la evidencia. Si no hay esa sección, lista vacía.
 
 Escribe en español claro y profesional, sin bromas, sin exagerar y sin suavizar.

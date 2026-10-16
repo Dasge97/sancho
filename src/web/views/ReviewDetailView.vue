@@ -22,6 +22,9 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 
 const running = computed(() => ['queued', 'analyzing'].includes(data.value?.run.status) || data.value?.run.publication_status === 'pending');
 const coverage = computed(() => data.value?.run.coverage || {});
+// Comprobaciones antes de fusionar: cómo se ve cada resultado.
+const checkWord: Record<string, string> = {cumple: 'Cumple', no_cumple: 'No cumple', no_aplica: 'No aplica', sin_evaluar: 'Sin evaluar'};
+const checkTone: Record<string, 'success' | 'danger' | 'neutral' | 'warning'> = {cumple: 'success', no_cumple: 'danger', no_aplica: 'neutral', sin_evaluar: 'warning'};
 // Herramientas de análisis estático: cuántos ficheros miraron y qué encontraron.
 const toolNames: Record<string, string> = {gitleaks: 'Secretos (gitleaks)', php: 'Sintaxis de PHP (php -l)'};
 function toolStatus(t: {status: string; files: number; findings: number; note?: string}) {
@@ -113,6 +116,13 @@ async function vote(findingId: string, value: 'useful' | 'false_positive') {
 
       <UiCard v-if="(data.run.summary || data.run.walkthrough) && !running" :title="data.run.walkthrough ? 'Qué hace esta PR' : 'Conclusión de Sancho'">
         <p v-if="data.run.walkthrough" class="summary"><InlineCode :text="data.run.walkthrough" /></p>
+        <p v-if="data.run.effort" class="effort muted"><strong>Esfuerzo de revisión:</strong> {{ data.run.effort.level }} de 5 · unos {{ data.run.effort.minutes }} min<template v-if="data.run.effort.reason"> · {{ data.run.effort.reason }}</template></p>
+        <ul v-if="data.run.checks?.length" class="checks" aria-label="Comprobaciones antes de fusionar">
+          <li v-for="c in data.run.checks" :key="c.name">
+            <UiBadge :tone="checkTone[c.status] || 'neutral'">{{ checkWord[c.status] || c.status }}</UiBadge>
+            <span><strong>{{ c.name }}</strong><template v-if="c.reason">. <InlineCode :text="c.reason" /></template></span>
+          </li>
+        </ul>
         <p v-if="data.run.summary" class="summary" :class="{conclusion: data.run.walkthrough}"><strong v-if="data.run.walkthrough">Conclusión de Sancho: </strong><InlineCode :text="data.run.summary" /></p>
         <div v-if="data.run.changes?.length" class="table-wrap changes">
           <table class="table cards">
@@ -244,4 +254,7 @@ tfoot td:last-child { padding-right: var(--space-6); }
 .suggestion { margin-top: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
 .suggestion-label { display: block; padding: var(--space-2) var(--space-3); font-size: var(--text-xs); font-weight: 600; color: var(--color-text-muted); background: var(--color-surface-muted); border-bottom: 1px solid var(--color-border); }
 .suggestion pre { margin: 0; padding: var(--space-3); font-family: var(--font-mono); font-size: 13px; line-height: 1.6; overflow-x: auto; white-space: pre; }
+.effort { margin-top: var(--space-3); font-size: var(--text-sm); }
+.checks { list-style: none; margin: var(--space-4) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.checks li { display: flex; align-items: baseline; gap: var(--space-3); font-size: var(--text-sm); }
 </style>

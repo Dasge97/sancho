@@ -270,6 +270,7 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
   });
 
   it('keeps counting in the summary a problem that is still open after a new commit',async()=>{
+    await pool.query("INSERT INTO settings(key,value) VALUES('review_checks',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value",[JSON.stringify(['Migraciones reversibles: toda migración nueva tiene down().'])]);
     remote[49]=pr(49,'src-49a');
     await sendWebhook('pullrequest:created',{pullrequest:remote[49]});await drainQueue();
     detectionOverride={summary:'Sin cambios relevantes.',walkthrough:'Ajusta un texto.',changes:[],candidates:[],follow_up:[{id:'abierto-1',status:'still_present',reason:'Sigue sin autorizar.'}]};
@@ -279,6 +280,14 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     const summary=calls.filter(c=>c.url.includes('/pullrequests/49/comments')&&['POST','PUT'].includes(c.method)&&c.body?.content?.raw?.includes('sancho-summary=')).at(-1)!;
     expect(summary.body.content.raw).toContain('### Sancho · 1 problema por revisar');
     expect(summary.body.content.raw).not.toContain('sin problemas encontrados');
+    // Comprobaciones: llegan al modelo; si no las evalúa, el resumen las da como «sin evaluar».
+    const detection=calls.find(c=>c.body?.text?.format?.name==='sancho_detection')!.body;
+    expect(detection.instructions).toContain('- **Migraciones reversibles**: toda migración nueva tiene down().');
+    expect(summary.body.content.raw).toContain('| ❔ | Migraciones reversibles | **Sin evaluar** |');
+    // Otras PR abiertas del repositorio que cambian el mismo fichero.
+    expect(summary.body.content.raw).toContain('**PR abiertas que tocan los mismos ficheros**');
+    expect(summary.body.content.raw).toMatch(/\[#4[2-6] PR 4[2-6]\]\(https:\/\/bitbucket\.org\/ws\/repo\/pull-requests\/4[2-6]\) · `Controller\.php`/);
+    await pool.query("DELETE FROM settings WHERE key='review_checks'");
   });
 
   it('answers a reply in the thread of a finding, withdraws it and learns the reason',async()=>{

@@ -45,3 +45,5 @@ CREATE INDEX IF NOT EXISTS learned_rules_repo_idx ON learned_rules(repository_id
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS suggestion text;
 -- Quién encontró el problema: el modelo o una herramienta de análisis estático (gitleaks, php).
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS origin text NOT NULL DEFAULT 'modelo';
+-- Esfuerzo de revisión, comprobaciones antes de fusionar y ficheros cambiados (para las PR relacionadas).
+ALTER TABLE review_runs ADD COLUMN IF NOT EXISTS effort jsonb, ADD COLUMN IF NOT EXISTS checks jsonb NOT NULL DEFAULT '[]', ADD COLUMN IF NOT EXISTS files jsonb NOT NULL DEFAULT '[]';

@@ -48,7 +48,7 @@ const engine = reactive({engine: 'agent' as 'agent' | 'openai', agentModel: 'cla
 // Reglas: generales (ajustes) y por repositorio (repositories.config). Las rutas, una por línea.
 interface Repo { id: string; name: string; workspace: string; slug: string; config: {context?: string; rules?: string; exclusions?: string[]} }
 const repos = ref<Repo[]>([]);
-const globalRules = reactive({rules: '', exclusions: ''});
+const globalRules = reactive({rules: '', exclusions: '', checks: ''});
 const repoRules = reactive({id: '', context: '', rules: '', exclusions: ''});
 const NL = String.fromCharCode(10);
 const lines = (text: string) => text.split(NL).map(l => l.trim()).filter(Boolean);
@@ -67,7 +67,7 @@ const {loading, error, reload} = useLoad(async () => {
   autoPublish.value = v.auto_publish === true;
   profilePr.value = v.profile_publish_pr !== false;
   strictProfile.value = v.review_profile === 'exigente';
-  Object.assign(globalRules, {rules: v.review_rules || '', exclusions: (v.review_exclusions || []).join(NL)});
+  Object.assign(globalRules, {rules: v.review_rules || '', exclusions: (v.review_exclusions || []).join(NL), checks: (v.review_checks || []).join(NL)});
   const e = await api<{engine: 'agent' | 'openai'; agent: typeof engine.agent; agent_model: string}>('/engine');
   Object.assign(engine, {engine: e.engine, agentModel: e.agent_model, agent: e.agent});
   repos.value = await api<Repo[]>('/repositories');
@@ -123,7 +123,7 @@ const saveModel = () => {
 };
 
 const saveGlobalRules = () => run('rules-global', async () => {
-  await put('/settings', {review_rules: globalRules.rules, review_exclusions: lines(globalRules.exclusions)});
+  await put('/settings', {review_rules: globalRules.rules, review_exclusions: lines(globalRules.exclusions), review_checks: lines(globalRules.checks).slice(0, 15)});
   notify('success', 'Reglas guardadas', 'Se aplicarán desde la próxima revisión de cualquier repositorio.');
 });
 const saveRepoRules = () => run('rules-repo', async () => {
@@ -246,6 +246,9 @@ async function toggleAutoPublish(value: boolean) {
           </UiField>
           <UiField v-slot="f" label="Rutas que nunca se revisan" help="Una por línea. Admite * y carpetas terminadas en /**, por ejemplo legacy/** o *.min.js." optional>
             <textarea :id="f.id" v-model="globalRules.exclusions" class="control mono" rows="4" :aria-describedby="f.describedby" />
+          </UiField>
+          <UiField v-slot="f" label="Comprobaciones antes de fusionar" help="Una por línea, con la forma «Nombre: qué hay que comprobar». El resumen de cada PR dirá si se cumple, no se cumple o no aplica. Como mucho 15. Ejemplo: «Migraciones reversibles: toda migración nueva tiene un método down()»." optional>
+            <textarea :id="f.id" v-model="globalRules.checks" class="control" rows="4" :aria-describedby="f.describedby" />
           </UiField>
           <div class="row-actions"><UiButton type="submit" variant="primary" :loading="busy === 'rules-global'">Guardar reglas generales</UiButton></div>
         </form>

@@ -71,21 +71,38 @@ function changesTable(changes:{path:string;summary:string}[],limit=15):string {
 
 // Resumen de la PR: qué hace, qué cambia por fichero y el índice de problemas (ordenados por
 // gravedad, máximo `limit`), sin repetir el texto de los comentarios en línea.
-export function renderSummary(input:{findings:PublishedFinding[];limit?:number;filesReviewed:number;commit:string;partial:string|null;reviewUrl:string;walkthrough?:string|null;changes?:{path:string;summary:string}[];resolved?:number}):string {
+export interface SummaryExtras {
+  effort?:{level:number;minutes:number;reason:string}|null;
+  checks?:{name:string;status:string;reason:string}[];
+  related?:{number:number;title:string;url:string|null;files:string[]}[];
+}
+const CHECK_LABEL:Record<string,[string,string]>={cumple:['✅','Cumple'],no_cumple:['❌','No cumple'],no_aplica:['➖','No aplica'],sin_evaluar:['❔','Sin evaluar']};
+
+// Partes del resumen que no son problemas: esfuerzo, comprobaciones antes de fusionar y PR que tocan
+// los mismos ficheros. Cada una sale solo si tiene contenido.
+function summaryExtras(x:SummaryExtras){
+  const effort=x.effort?`**Esfuerzo de revisión:** ${x.effort.level} de 5 · unos ${x.effort.minutes} min${x.effort.reason?` · ${x.effort.reason}`:''}`:'';
+  const checks=x.checks?.length?`**Comprobaciones antes de fusionar**\n\n| | Comprobación | Resultado |\n| :---: | --- | --- |\n${x.checks.map(c=>{const [icon,word]=CHECK_LABEL[c.status]||CHECK_LABEL.sin_evaluar;return `| ${icon} | ${cell(c.name)} | **${word}**${c.reason?`. ${cell(c.reason)}`:''} |`}).join('\n')}`:'';
+  const related=x.related?.length?`**PR abiertas que tocan los mismos ficheros**\n\n${x.related.map(r=>`- ${r.url?`[#${r.number} ${cell(r.title)}](${r.url})`:`#${r.number} ${cell(r.title)}`} · ${r.files.slice(0,3).map(f=>code(f.split('/').pop()||f)).join(', ')}${r.files.length>3?` y ${r.files.length-3} más`:''}`).join('\n')}`:'';
+  return {effort,tail:[checks,related].filter(Boolean).map(t=>`\n\n${t}`).join('')};
+}
+
+export function renderSummary(input:{findings:PublishedFinding[];limit?:number;filesReviewed:number;commit:string;partial:string|null;reviewUrl:string;walkthrough?:string|null;changes?:{path:string;summary:string}[];resolved?:number}&SummaryExtras):string {
+  const extras=summaryExtras(input);
   const all=input.findings,total=all.length,findings=all.slice(0,input.limit??8),hiddenCount=total-findings.length,resolved=input.resolved||0;
   const footer=`<sub>${input.filesReviewed} ${input.filesReviewed===1?'fichero revisado':'ficheros revisados'} · commit ${code(input.commit.slice(0,7))} · [Ver la revisión completa](${input.reviewUrl})</sub>`;
   const partial=input.partial?`\n\n⚠️ Revisión parcial: ${clip(input.partial,160)}`:'';
-  const about=[input.walkthrough?.trim()?`**Qué hace esta PR.** ${input.walkthrough.trim()}`:'',changesTable(input.changes||[])].filter(Boolean).join('\n\n');
+  const about=[input.walkthrough?.trim()?`**Qué hace esta PR.** ${input.walkthrough.trim()}`:'',extras.effort,changesTable(input.changes||[])].filter(Boolean).join('\n\n');
   const aboutBlock=about?`\n\n${about}`:'';
   // Contador por gravedad, y cuántos comentarios anteriores se han arreglado ya en la PR.
   const n=(sev:string)=>all.filter(x=>x.severity===sev).length;
   // La columna de detalles menores solo sale con el perfil exigente, cuando los hay.
   const cols:[string,number][]=[['🔴 Críticos',n('critical')],['🟠 Altos',n('high')],['🟡 Medios',n('medium')],...(n('low')?[['🔵 Menores',n('low')] as [string,number]]:[]),['✅ Resueltos',resolved]];
   const counter=total||resolved?`\n\n| ${cols.map(c=>c[0]).join(' | ')} |\n| ${cols.map(()=>':---:').join(' | ')} |\n| ${cols.map(c=>c[1]?`**${c[1]}**`:'0').join(' | ')} |`:'';
-  if(!total)return `### Sancho · sin problemas encontrados${counter}${aboutBlock}${partial}\n\n${footer}`;
+  if(!total)return `### Sancho · sin problemas encontrados${counter}${aboutBlock}${extras.tail}${partial}\n\n${footer}`;
   const list=findings.map((f,i)=>`${i+1}. ${(SEVERITY_LABEL[f.severity]||SEVERITY_LABEL.medium)[0]} **${shortFinding(f).title}** · ${code((f.path.split('/').pop()||f.path)+(f.start_line?':'+f.start_line:''))}`).join('\n');
   const more=hiddenCount?`\n\nY ${hiddenCount} más en el panel.`:'';
-  return `### Sancho · ${total} ${total===1?'problema':'problemas'} por revisar${counter}${aboutBlock}\n\n${list}${more}${partial}\n\n${footer}`;
+  return `### Sancho · ${total} ${total===1?'problema':'problemas'} por revisar${counter}${aboutBlock}\n\n${list}${more}${extras.tail}${partial}\n\n${footer}`;
 }
 
 export function shouldReviewWebhook(event:string, payload:any):boolean {
