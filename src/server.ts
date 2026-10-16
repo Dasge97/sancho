@@ -3,7 +3,7 @@ import 'express-async-errors';
 import express from 'express'; import session from 'express-session'; import PgSession from 'connect-pg-simple'; import helmet from 'helmet'; import rateLimit from 'express-rate-limit'; import bcrypt from 'bcryptjs'; import crypto from 'node:crypto'; import path from 'node:path'; import {fileURLToPath,pathToFileURL} from 'node:url'; import {z} from 'zod';
 import {pool,migrate} from './db.js';
 import {annotateDiff,gatherContext} from './context.js';
-import {buildInstructions,shortHash} from './prompts.js';
+import {buildInstructions,defaultPrompt,PROMPT_NAMES,shortHash,type PromptName,type PromptOverrides} from './prompts.js';
 import {findingFingerprint,hmacSha256,safeEqual,webhookEventKey,renderSummary,renderInlineComment,sanchoLink,clip,addedLineExists,filterReviewDiff,redactSecretsFromText,normalizePullRequest,isSessionlessPath,shouldAutoPublish} from './domain.js';
 const app=express(), PgStore=PgSession(session), port=Number(process.env.PORT||3000), prod=process.env.NODE_ENV==='production',secureCookie=process.env.SESSION_COOKIE_SECURE?process.env.SESSION_COOKIE_SECURE==='true':prod;
 app.disable('x-powered-by'); if(prod)app.set('trust proxy',1); app.use(helmet({contentSecurityPolicy:false,strictTransportSecurity:secureCookie?undefined:false})); app.use('/api/webhooks/bitbucket',express.raw({type:'application/json',limit:'256kb'})); app.use(express.json({limit:'256kb'}));
@@ -33,6 +33,25 @@ app.get('/api/reviews',signedIn,async(_req,res)=>res.json((await pool.query('SEL
 app.get('/api/reviews/:id',signedIn,async(req,res)=>{const run=await pool.query('SELECT r.*,p.number,p.title,p.url,repo.name repository FROM review_runs r JOIN pull_requests p ON p.id=r.pull_request_id JOIN repositories repo ON repo.id=r.repository_id WHERE r.id=$1',[req.params.id]);if(!run.rows[0])return res.status(404).json({error:'Revisión no encontrada'});const [findings,usage]=await Promise.all([pool.query('SELECT * FROM findings WHERE run_id=$1 ORDER BY severity,path,start_line',[req.params.id]),pool.query('SELECT provider,model,input_tokens,output_tokens,cost_usd,status,created_at FROM usage_calls WHERE run_id=$1',[req.params.id])]);res.json({run:run.rows[0],findings:findings.rows,usage:usage.rows})});
 app.post('/api/repositories/:id/reviews',signedIn,async(req,res)=>{const p=z.object({number:z.number().int().positive(),publish:z.boolean().default(false),idempotency_key:z.string().min(8)}).safeParse(req.body);if(!p.success)return res.status(422).json({error:'Datos no válidos'});const repo=await pool.query('SELECT * FROM repositories WHERE id=$1',[req.params.id]);if(!repo.rows[0]||!repo.rows[0].active)return res.status(404).json({error:'Repositorio no conectado o pausado'});if(p.data.publish&&(req.session as any).user.role!=='admin')return res.status(403).json({error:'Solo administración puede solicitar publicación'});const result=await createReview(repo.rows[0],p.data.number,'manual',p.data.publish,(req.session as any).user.id+':'+req.params.id+':'+p.data.idempotency_key);if(result.error)return res.status(404).json(result);res.status(result.created?202:200).json(result)});
 app.get('/api/usage',signedIn,async(_req,res)=>{const {rows}=await pool.query("SELECT date_trunc('day',created_at) AS usage_day,model,count(*) calls,sum(input_tokens) input_tokens,sum(output_tokens) output_tokens,sum(cost_usd) cost_usd,count(*) FILTER(WHERE cost_usd IS NULL) unknown_cost_calls FROM usage_calls WHERE created_at>=date_trunc('month',now()) GROUP BY 1,2 ORDER BY 1 DESC");const totals=await pool.query("SELECT COALESCE(sum(cost_usd),0) known_cost,count(*) FILTER(WHERE cost_usd IS NULL) unknown_cost_calls FROM usage_calls WHERE created_at>=date_trunc('month',now())");const budget=await pool.query("SELECT value FROM settings WHERE key='monthly_budget_usd'");const limit=budget.rows[0]?.value??null,known=Number(totals.rows[0].known_cost);res.json({monthly_budget_usd:limit,monthly_known_cost:known,unknown_cost_calls:Number(totals.rows[0].unknown_cost_calls),budget_warning:limit!==null&&known>=Number(limit)*0.8,over_budget:limit!==null&&known>=Number(limit),warning_only:true,days:rows})});
+// Instrucciones de la IA editables desde el panel. Cada cambio es una versión nueva; una versión
+// con contenido nulo significa «volver al original de prompts/». La activa es la más reciente.
+async function activePrompts():Promise<PromptOverrides>{const {rows}=await pool.query('SELECT DISTINCT ON (name) name,content FROM prompt_versions ORDER BY name,created_at DESC');return Object.fromEntries(rows.map(r=>[r.name,r.content]))}
+const promptLabels:Record<PromptName,string>={deteccion:'Detección',verificacion:'Verificación',agente:'Agente'};
+app.get('/api/prompts',adminOnly,async(_req,res)=>{
+  const {rows}=await pool.query("SELECT p.id,p.name,p.content,p.created_at,u.email actor,row_number() OVER (PARTITION BY p.name ORDER BY p.created_at DESC) n FROM prompt_versions p LEFT JOIN users u ON u.id=p.created_by");
+  res.json(PROMPT_NAMES.map(name=>{const history=rows.filter(r=>r.name===name&&r.n<=15).sort((a,b)=>Number(a.n)-Number(b.n));const active=history[0];return {name,label:promptLabels[name],original:defaultPrompt(name),content:active?.content??defaultPrompt(name),customized:!!active?.content,updated_at:active?.created_at??null,updated_by:active?.actor??null,history:history.map(h=>({id:h.id,created_at:h.created_at,actor:h.actor,content:h.content}))}}));
+});
+app.put('/api/prompts/:name',adminOnly,async(req,res)=>{
+  const name=req.params.name as PromptName;if(!PROMPT_NAMES.includes(name))return res.status(404).json({error:'Instrucción no encontrada'});
+  const p=z.object({content:z.string().max(40000).nullable()}).safeParse(req.body);if(!p.success)return res.status(422).json({error:'El texto no es válido o pasa de 40 000 caracteres.'});
+  const content=p.data.content?.trim()||null;
+  if(content&&content.length<200)return res.status(422).json({error:'Las instrucciones son demasiado cortas: escribe al menos 200 caracteres.'});
+  // Guardar el texto original es lo mismo que restaurarlo.
+  const value=content&&content===defaultPrompt(name).trim()?null:content;
+  await pool.query('INSERT INTO prompt_versions(name,content,created_by) VALUES($1,$2,$3)',[name,value,(req.session as any).user.id]);
+  await audit((req.session as any).user.id,value?'prompt.updated':'prompt.reset',name);
+  res.json({ok:true,customized:!!value});
+});
 // Estado del motor de agente, para el panel: si está configurado y si responde.
 app.get('/api/engine',adminOnly,async(_req,res)=>{let agent:any={configured:!!CEREBRO_URL,reachable:false,mode:null};if(CEREBRO_URL){try{const r=await fetch(CEREBRO_URL.replace(/\/$/,'')+'/health',{signal:AbortSignal.timeout(5000)});const b:any=await r.json();agent={configured:true,reachable:r.ok,mode:b.mode||null}}catch{}}res.json({engine:await reviewEngine(),agent,agent_model:await setting('agent_model')||'claude-opus-5-5'})});
 // Los secretos no salen nunca, ni cifrados: de OpenAI solo si hay clave; de Bitbucket, workspace y correo.
@@ -248,7 +267,8 @@ async function runReview(job:any){
     // Datos para el modelo: van en `input`, separados de las instrucciones y marcados como no confiables.
     const dataBlocks=['<pull_request>','Título: '+pr.title,'Repositorio: '+repo.workspace+'/'+repo.slug,'</pull_request>','','<diff>',annotateDiff(diff),'</diff>',...(agentMode?[]:['','<contexto>',context.text||'(sin ficheros de contexto)','</contexto>'])].join('\n');
     const rules={global:await setting('review_rules'),projectContext:repo.config?.context,repository:repo.config?.rules};
-    const detectionInstructions=buildInstructions('deteccion',rules,agentMode),verificationInstructions=buildInstructions('verificacion',rules,agentMode);
+    const overrides=await activePrompts();
+    const detectionInstructions=buildInstructions('deteccion',rules,agentMode,overrides),verificationInstructions=buildInstructions('verificacion',rules,agentMode,overrides);
     const openai=agentMode?null:await getSecret('openai_secret'),model=agentMode?String(await setting('agent_model')||'claude-opus-5-5'):await setting('model');let candidates:any[]=[],confirmed:any[]=[],summary='Análisis completado sin hallazgos confirmados.';
     const coverage:any={source,engine,files_considered:filtered.files,excluded_files:filtered.excluded,truncated:rawTruncated||filtered.truncated||context.partial,context_files:context.files.length,context_list:context.files,redacted_lines:filtered.redactedLines+context.redacted,project_code_executed:false,prompt_version:shortHash(detectionInstructions+verificationInstructions),limitations:[]};if(rawTruncated||filtered.truncated||context.partial)coverage.limitations.push('Se alcanzó un límite de tamaño o lectura; el análisis puede estar incompleto.');
     // Una pregunta al modelo, por el motor que toque. Devuelve la respuesta y, con el agente, qué herramientas usó.

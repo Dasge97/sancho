@@ -98,4 +98,12 @@ describe('instructions sent to the model', () => {
     expect(withRules).toContain('Los administradores ven todo.');
     expect(buildInstructions('verificacion')).toContain('escéptico');
   });
+  it('use the version edited in the dashboard instead of the original, and the original when it is reset', () => {
+    const edited = buildInstructions('deteccion', {global: 'Regla.'}, true, {deteccion: 'Instrucciones propias de detección.', agente: null});
+    expect(edited.startsWith('Instrucciones propias de detección.')).toBe(true);
+    expect(edited).not.toContain('Eres Sancho');
+    expect(edited).toContain('tienes el repositorio completo');
+    expect(edited).toContain('Regla.');
+    expect(buildInstructions('deteccion', {}, false, {deteccion: '   '})).toContain('Eres Sancho');
+  });
 });

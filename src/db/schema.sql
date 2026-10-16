@@ -28,3 +28,5 @@ ALTER TABLE findings ADD COLUMN IF NOT EXISTS short_title text, ADD COLUMN IF NO
 CREATE TABLE IF NOT EXISTS ai_exchanges (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), run_id uuid NOT NULL REFERENCES review_runs ON DELETE CASCADE, kind text NOT NULL, model text NOT NULL, instructions text NOT NULL, input text NOT NULL, output text, status text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS ai_exchanges_run_idx ON ai_exchanges(run_id, created_at);
 ALTER TABLE ai_exchanges ADD COLUMN IF NOT EXISTS tools jsonb NOT NULL DEFAULT '[]';
+CREATE TABLE IF NOT EXISTS prompt_versions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL CHECK(name IN ('deteccion','verificacion','agente')), content text, created_by uuid REFERENCES users ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS prompt_versions_name_idx ON prompt_versions(name, created_at DESC);

@@ -2,7 +2,8 @@
 // Ajustes (solo administración): una subpestaña por área (Bitbucket, OpenAI, modelo y costes,
 // publicación). Cada área guarda lo suyo; la publicación automática se guarda al cambiar el interruptor.
 import {computed, reactive, ref, watch} from 'vue';
-import {Bot, CircleDollarSign, Cpu, GitBranch, ListChecks, MessageSquare} from 'lucide-vue-next';
+import {Bot, CircleDollarSign, Cpu, FileText, GitBranch, ListChecks, MessageSquare} from 'lucide-vue-next';
+import PromptsEditor from './PromptsEditor.vue';
 import {api, errorMessage, post, put} from '../lib/api';
 import {crumbTail, notify, route, setTab} from '../lib/ui-state';
 import {useLoad} from '../lib/use-load';
@@ -22,6 +23,7 @@ const tabs = [
   {id: 'openai', label: 'OpenAI', icon: Bot},
   {id: 'modelo', label: 'Modelo y costes', icon: CircleDollarSign},
   {id: 'reglas', label: 'Reglas de revisión', icon: ListChecks},
+  {id: 'instrucciones', label: 'Instrucciones de la IA', icon: FileText},
   {id: 'publicacion', label: 'Publicación', icon: MessageSquare},
 ];
 const tab = computed({get: () => tabs.some(t => t.id === route.tab) ? route.tab! : 'bitbucket', set: setTab});
@@ -254,6 +256,8 @@ async function toggleAutoPublish(value: boolean) {
         </form>
       </UiCard>
     </div>
+
+    <PromptsEditor v-else-if="tab === 'instrucciones'" />
 
     <UiCard v-else title="Publicación en Bitbucket" description="Decide qué hace Sancho con las revisiones que lanza solo, por el webhook o al repasar las pull requests abiertas.">
       <div class="form">

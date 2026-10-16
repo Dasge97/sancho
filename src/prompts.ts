@@ -1,22 +1,29 @@
-// Instrucciones que recibe el modelo. Viven en prompts/*.md (versionadas con el código) y aquí se
-// les añaden las reglas que escribe administración: generales y del repositorio revisado.
-// Van en el campo `instructions` de OpenAI; el diff y el contexto, en `input`, como datos.
+// Instrucciones que recibe el modelo. Las originales viven en prompts/*.md (versionadas con el
+// código); administración puede sustituirlas desde Ajustes → Instrucciones de la IA, y cada cambio
+// queda como versión en la tabla prompt_versions. Al final se añaden las reglas del equipo.
+// Van en el campo de instrucciones del modelo; el diff y el contexto, aparte, como datos.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 
+export const PROMPT_NAMES = ['deteccion', 'verificacion', 'agente'] as const;
+export type PromptName = typeof PROMPT_NAMES[number];
+export type PromptOverrides = Partial<Record<PromptName, string | null>>;
+
 const dir = new URL('../prompts/', import.meta.url);
 const cache = new Map<string, string>();
-function template(name: 'deteccion' | 'verificacion' | 'agente'): string {
+/** La instrucción original, tal como está en prompts/<nombre>.md. */
+export function defaultPrompt(name: PromptName): string {
   if (!cache.has(name)) cache.set(name, fs.readFileSync(new URL(name + '.md', dir), 'utf8'));
   return cache.get(name)!;
 }
+const template = (name: PromptName, overrides: PromptOverrides) => overrides[name]?.trim() ? overrides[name]! : defaultPrompt(name);
 
 export interface TeamRules { global?: string | null; projectContext?: string | null; repository?: string | null }
 
 /** Instrucciones completas: la plantilla, la parte del agente si revisa el motor, y al final las reglas del equipo. */
-export function buildInstructions(kind: 'deteccion' | 'verificacion', rules: TeamRules = {}, agent = false): string {
-  const parts = [template(kind).trim()];
-  if (agent) parts.push(template('agente').trim());
+export function buildInstructions(kind: 'deteccion' | 'verificacion', rules: TeamRules = {}, agent = false, overrides: PromptOverrides = {}): string {
+  const parts = [template(kind, overrides).trim()];
+  if (agent) parts.push(template('agente', overrides).trim());
   const extra: string[] = [];
   if (rules.projectContext?.trim()) extra.push('### De qué va este proyecto\n\n' + rules.projectContext.trim());
   if (rules.global?.trim()) extra.push('### Reglas del equipo para todos los repositorios\n\n' + rules.global.trim());

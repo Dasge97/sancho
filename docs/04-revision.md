@@ -38,6 +38,8 @@ Al final de las instrucciones se añaden, si existen, las reglas de Ajustes → 
 
 Contexto que recibe el modelo (`src/context.ts`): hasta 8 ficheros cambiados (16 KB cada uno) y hasta 8 relacionados (12 KB cada uno), con un máximo de 60 000 caracteres. Los relacionados son las clases importadas con `use` y resueltas con el autoload PSR-4 de `composer.json`, la política de Laravel de cada modelo usado y, si cambia un controlador, los ficheros de rutas y `config/packages/security.yaml`. Todo pasa por el ocultado de secretos. Si se recorta algo, la revisión queda como parcial.
 
+Las tres instrucciones se pueden sustituir desde Ajustes → Instrucciones de la IA (D22); la versión activa es la última guardada en `prompt_versions`, y una versión vacía vuelve al fichero original.
+
 La verificación devuelve, además de la decisión, la gravedad que considera correcta; se publica esa. Lo enviado y la respuesta de cada llamada se guardan en `ai_exchanges` (D20) y se consultan con `node dist-server/ai-log.js [id-de-revisión]`.
 
 Prioridades: errores introducidos o agravados por la PR, controles de autorización, separación de clientes/usuarios, validación, SQL inseguro, transacciones, migraciones, compatibilidad con versiones presentes y regresiones demostrables.

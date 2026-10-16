@@ -167,4 +167,15 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     const exchange=(await pool.query("SELECT tools FROM ai_exchanges WHERE model LIKE 'claude-opus-5-5%' ORDER BY created_at LIMIT 1")).rows[0];
     expect(exchange.tools[1]).toEqual({tool:'Read',input:{file_path:'app/Policies/InvoicePolicy.php'}});
   });
+
+  it('sends the agent the instructions edited in the dashboard',async()=>{
+    await pool.query("INSERT INTO prompt_versions(name,content) VALUES('agente','Explora solo la carpeta app/ y lee las políticas antes de opinar.')");
+    calls.length=0;remote[45]=pr(45,'abc45');
+    await sendWebhook('pullrequest:created',{pullrequest:remote[45]});
+    await drainQueue();
+    const detection=calls.find(c=>c.url==='http://cerebro.test/tasks')!.body;
+    expect(detection.instructions).toContain('Explora solo la carpeta app/ y lee las políticas antes de opinar.');
+    expect(detection.instructions).not.toContain('tienes el repositorio completo');
+    expect(detection.instructions).toContain('Eres Sancho');
+  });
 });

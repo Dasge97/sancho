@@ -115,3 +115,8 @@ Panel rehecho según la skill global `diseno-web`, con los colores de la guía d
 - 26 pruebas pasan; la nueva comprueba lo que recibe el cerebro (copia, instrucciones del agente, diff sin contexto fijo) y lo que se registra.
 - Desplegado. Comprobado en el servidor: el cerebro responde, clona y descarga el commit de `sancho-pruebas`.
 - **Bloqueado:** la sesión de Claude de codehive está caducada (sin token de renovación). Falta volver a iniciar sesión para la prueba real y la prueba de seguridad (leer fuera de la copia).
+
+## Instrucciones editables (16-10-2026)
+
+- Ajustes → Instrucciones de la IA: editor de detección, verificación y agente, con historial de versiones (autor y fecha), «Restaurar original» y aviso de cambios sin guardar. Tabla `prompt_versions`; endpoints `GET /api/prompts` y `PUT /api/prompts/:nombre` solo para administración, con auditoría.
+- 28 pruebas pasan; la de integración comprueba que la versión editada llega al agente. Probado en el navegador: guardar, cambiar de instrucción, descartar y restaurar.
