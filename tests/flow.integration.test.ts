@@ -44,7 +44,7 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
       const body=JSON.parse(init.body);
       if(body.text.format.name==='sancho_conversation')return openaiResponse(conversationReply);
       if(body.text.format.name==='sancho_detection'&&detectionOverride)return openaiResponse(detectionOverride);
-      if(body.text.format.name==='sancho_detection')return openaiResponse({summary:'Un hallazgo.',walkthrough:'Añade la búsqueda de facturas.',changes:[{path:'src/Controller.php',summary:'Devuelve la factura por id.'}],candidates:[{candidate_id:'x',path:'src/Controller.php',start_line:2,severity:'high',category:'authorization',title:'Falta comprobar la propiedad del registro',scenario:'Un usuario cambia el id.',impact:'Lee datos ajenos.',evidence:'find($id) sin política.',recommendation:'Aplicar la política.',short_title:'Factura ajena accesible por id',short_impact:'Un usuario lee facturas de otros cambiando el id.',short_fix:'Llama a `authorize` antes de devolverla.'}]});
+      if(body.text.format.name==='sancho_detection')return openaiResponse({summary:'Un hallazgo.',walkthrough:'Añade la búsqueda de facturas.',changes:[{path:'src/Controller.php',summary:'Devuelve la factura por id.'}],candidates:[{candidate_id:'x',path:'src/Controller.php',start_line:2,severity:'high',category:'authorization',title:'Falta comprobar la propiedad del registro',scenario:'Un usuario cambia el id.',impact:'Lee datos ajenos.',evidence:'find($id) sin política.',recommendation:'Aplicar la política.',short_title:'Factura ajena accesible por id',short_impact:'Un usuario lee facturas de otros cambiando el id.',short_fix:'Llama a `authorize` antes de devolverla.',suggestion:"$invoice = $repo->find($id);\n$this->authorize('view', $invoice);\nreturn $this->json($invoice);"}]});
       return openaiResponse({results:[{candidate_id:'candidate-0',disposition:'supported',severity:'critical',reason:'Visible en el diff.'}]});
     }
     // Repositorio, rama principal y la PR de la ficha que abre Sancho.
@@ -153,6 +153,8 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     expect(posts[0].body.inline).toEqual({path:'src/Controller.php',to:2});
     expect(posts[0].body.content.raw.startsWith('🔴 **Factura ajena accesible por id**')).toBe(true);
     expect(posts[0].body.content.raw).toContain('sancho-finding=');
+    expect(posts[0].body.content.raw).toContain("```suggestion\n$invoice = $repo->find($id);\n$this->authorize('view', $invoice);\nreturn $this->json($invoice);\n```");
+    expect((await pool.query("SELECT suggestion FROM findings LIMIT 1")).rows[0].suggestion).toContain('authorize');
     expect(posts[1].body.content.raw).toContain('sancho-summary=');
     expect(posts[1].body.content.raw).toContain('**Qué hace esta PR.** Añade la búsqueda de facturas.');
     expect(posts[1].body.content.raw).toContain('| `src/Controller.php` | Devuelve la factura por id. |');

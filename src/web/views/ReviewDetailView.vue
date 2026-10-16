@@ -116,6 +116,10 @@ async function vote(findingId: string, value: 'useful' | 'false_positive') {
             <code class="where">{{ f.path }}:{{ f.start_line }}</code>
             <p v-if="f.short_impact" class="impact"><InlineCode :text="f.short_impact" /></p>
             <p v-if="f.short_fix" class="fix"><strong>Arreglo:</strong> <InlineCode :text="f.short_fix" /></p>
+            <div v-if="f.suggestion" class="suggestion">
+              <span class="suggestion-label">Cambio propuesto para la línea {{ f.start_line }}</span>
+              <pre><code>{{ f.suggestion }}</code></pre>
+            </div>
             <details class="more">
               <summary>Ver el detalle completo</summary>
               <dl>
@@ -216,4 +220,7 @@ tfoot td { padding: var(--space-3) var(--space-4); border-top: 1px solid var(--c
 tfoot td:first-child { padding-left: var(--space-6); }
 tfoot td:last-child { padding-right: var(--space-6); }
 @media (max-width: 767px) { .finding { padding: var(--space-4); } }
+.suggestion { margin-top: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
+.suggestion-label { display: block; padding: var(--space-2) var(--space-3); font-size: var(--text-xs); font-weight: 600; color: var(--color-text-muted); background: var(--color-surface-muted); border-bottom: 1px solid var(--color-border); }
+.suggestion pre { margin: 0; padding: var(--space-3); font-family: var(--font-mono); font-size: 13px; line-height: 1.6; overflow-x: auto; white-space: pre; }
 </style>

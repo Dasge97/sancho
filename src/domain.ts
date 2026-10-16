@@ -18,7 +18,7 @@ export function findingFingerprint(repositoryId: string, prNumber: number, findi
   return crypto.createHash('sha256').update(`${repositoryId}:${prNumber}:${finding.path}:${finding.category}:${title}`).digest('hex');
 }
 
-export type PublishedFinding={severity:string;title:string;path:string;start_line:number|null;impact:string;recommendation:string;short_title?:string|null;short_impact?:string|null;short_fix?:string|null};
+export type PublishedFinding={severity:string;title:string;path:string;start_line:number|null;impact:string;recommendation:string;short_title?:string|null;short_impact?:string|null;short_fix?:string|null;suggestion?:string|null};
 
 // Recorta a un máximo de caracteres, en una sola línea y sin partir palabras.
 export function clip(text:string,max:number):string {
@@ -44,7 +44,9 @@ export function sanchoLink(base:string,params:Record<string,string>):string {
 
 export function renderInlineComment(f:PublishedFinding,detailUrl:string):string {
   const s=shortFinding(f);
-  return `${SEVERITY_ICON[f.severity]||'🟠'} **${s.title}**\n\n${s.impact}\n\n**Arreglo:** ${s.fix} · [Detalle](${detailUrl})`;
+  // Con sugerencia, Bitbucket muestra el cambio propuesto sobre la línea comentada.
+  const suggestion=f.suggestion?`\n\n\`\`\`suggestion\n${f.suggestion}\n\`\`\``:'';
+  return `${SEVERITY_ICON[f.severity]||'🟠'} **${s.title}**\n\n${s.impact}\n\n**Arreglo:** ${s.fix} · [Detalle](${detailUrl})${suggestion}`;
 }
 
 // Tabla de cambios por fichero del resumen (como mucho `limit` filas). Las barras verticales del
@@ -77,8 +79,22 @@ export function shouldReviewWebhook(event:string, payload:any):boolean {
   return false;
 }
 
-export function addedLineExists(diff:string,file:string,line:number):boolean {
-  if(!file||file.startsWith('/')||file.split('/').includes('..')||!Number.isInteger(line)||line<1)return false;
+export const addedLineExists=(diff:string,file:string,line:number):boolean=>addedLineText(diff,file,line)!==null;
+
+// Sugerencia de código para la línea comentada: el texto que la sustituye. Se descarta si no cambia
+// nada, si es larga o si trae bloques de código que romperían el comentario.
+export function cleanSuggestion(diff:string,file:string,line:number,raw:unknown):string|null {
+  const original=addedLineText(diff,file,line);
+  if(original===null||typeof raw!=='string')return null;
+  const text=raw.replace(/\r\n/g,'\n').replace(/^\s*```[a-z]*\n/i,'').replace(/\n```\s*$/,'').replace(/\s+$/,'');
+  if(!text.trim()||text.includes('```')||text.length>1500||text.split('\n').length>15)return null;
+  if(text.trim()===original.trim())return null;
+  return text;
+}
+
+// Texto de una línea añadida del diff (sin el «+»), o null si esa línea no es una línea añadida.
+export function addedLineText(diff:string,file:string,line:number):string|null {
+  if(!file||file.startsWith('/')||file.split('/').includes('..')||!Number.isInteger(line)||line<1)return null;
   const sections=diff.split(/^diff --git /m).slice(1);
   for(const section of sections){
     const header=section.slice(0,section.indexOf('\n'));
@@ -87,11 +103,11 @@ export function addedLineExists(diff:string,file:string,line:number):boolean {
     for(const row of section.split('\n')){
       const hunk=row.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
       if(hunk){current=Number(hunk[1]);continue}
-      if(row.startsWith('+')&&!row.startsWith('+++')){if(current===line)return true;current++}
+      if(row.startsWith('+')&&!row.startsWith('+++')){if(current===line)return row.slice(1).replace(/\r$/,'');current++}
       else if(row.startsWith(' '))current++;
     }
   }
-  return false;
+  return null;
 }
 
 export function filterReviewDiff(diff:string,config:Record<string,unknown>={},maxFiles=60,maxBytes=90000){

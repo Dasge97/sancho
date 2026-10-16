@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {findingFingerprint,hmacSha256,safeEqual,shouldReviewWebhook,webhookEventKey,renderSummary,addedLineExists,filterReviewDiff,redactSecretsFromText,normalizePullRequest,isSessionlessPath,shouldAutoPublish,renderInlineComment,sanchoLink,clip} from '../src/domain.js';
+import {findingFingerprint,hmacSha256,safeEqual,shouldReviewWebhook,webhookEventKey,renderSummary,addedLineExists,filterReviewDiff,redactSecretsFromText,normalizePullRequest,isSessionlessPath,shouldAutoPublish,renderInlineComment,sanchoLink,clip,cleanSuggestion,addedLineText} from '../src/domain.js';
 
 describe('webhook security and idempotency contracts',()=>{
   it('authenticates the exact raw body and compares signatures safely',()=>{
@@ -97,5 +97,29 @@ describe('PR summary with walkthrough and changes',()=>{
     expect(summary).toContain('| `app/A.php` | Nuevo método search \\| con filtro. |');
     const many=Array.from({length:18},(_,i)=>({path:`f${i}.php`,summary:'Cambio.'}));
     expect(renderSummary({findings:[],filesReviewed:18,commit:'abcdef1',partial:null,reviewUrl:'https://s.test/',changes:many})).toContain('Y 3 ficheros más en el panel.');
+  });
+});
+
+describe('code suggestions',()=>{
+  const diff='diff --git a/app/A.php b/app/A.php\n--- a/app/A.php\n+++ b/app/A.php\n@@ -1,2 +1,3 @@\n <?php\n+    return $this->json($repo->find($id));\r\n // fin\n';
+  it('reads the text of an added line and nothing else',()=>{
+    expect(addedLineText(diff,'app/A.php',2)).toBe('    return $this->json($repo->find($id));');
+    expect(addedLineText(diff,'app/A.php',1)).toBeNull();
+    expect(addedLineText(diff,'app/B.php',2)).toBeNull();
+  });
+  it('keeps a real change with its indentation and drops fences, no-ops and long or nested blocks',()=>{
+    const fix='    $invoice = $repo->find($id);\n    $this->authorize(\'view\', $invoice);\n    return $this->json($invoice);';
+    expect(cleanSuggestion(diff,'app/A.php',2,fix)).toBe(fix);
+    expect(cleanSuggestion(diff,'app/A.php',2,'```php\n'+fix+'\n```')).toBe(fix);
+    expect(cleanSuggestion(diff,'app/A.php',2,'return $this->json($repo->find($id));')).toBeNull();
+    expect(cleanSuggestion(diff,'app/A.php',2,'')).toBeNull();
+    expect(cleanSuggestion(diff,'app/A.php',2,'a\n```\nb')).toBeNull();
+    expect(cleanSuggestion(diff,'app/A.php',2,Array(16).fill('x();').join('\n'))).toBeNull();
+    expect(cleanSuggestion(diff,'app/A.php',1,fix)).toBeNull();
+    expect(cleanSuggestion(diff,'app/A.php',2,undefined)).toBeNull();
+  });
+  it('adds the suggestion block at the end of the inline comment',()=>{
+    const raw=renderInlineComment({severity:'high',title:'T',path:'app/A.php',start_line:2,impact:'I',recommendation:'R',suggestion:'    return 1;'},'https://sancho.test/#/x');
+    expect(raw.endsWith('\n\n```suggestion\n    return 1;\n```')).toBe(true);
   });
 });

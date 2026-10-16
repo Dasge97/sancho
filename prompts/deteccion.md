@@ -104,6 +104,10 @@ No propongas nada por debajo de `medium`.
   el título.
 - `short_fix`: una frase de como mucho 140 caracteres con el cambio a hacer; nombres de código entre
   comillas invertidas.
+- `suggestion`: el código que sustituye a la línea `start_line`, listo para aplicarlo tal cual: con
+  su sangría, sin el prefijo `+L…|` y sin bloques de Markdown. Puede ocupar varias líneas (como
+  mucho 15) si el arreglo necesita añadir alguna. Déjalo vacío (`""`) si el arreglo no cabe en
+  sustituir esa línea, si toca otros ficheros o si no estás seguro de que compila.
 - `category`: `security`, `authorization`, `correctness`, `data_integrity`, `performance`,
   `compatibility` u `other`.
 - `summary`: dos o tres frases en español sobre la PR: qué hace, qué has encontrado y, si es el caso,
