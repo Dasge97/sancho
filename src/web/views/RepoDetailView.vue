@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // Detalle de un repositorio: la ficha del proyecto (lo que Sancho sabe de él y lee antes de cada
-// revisión) y la configuración que el propio repositorio da en su .sancho.yml.
+// revisión), lo que ha aprendido del equipo, sus conversaciones en las PR y la configuración que el
+// propio repositorio da en su .sancho.yml.
 import {computed, onBeforeUnmount, ref, watch} from 'vue';
-import {BookOpen, ExternalLink, FileCode2, Loader2, Pencil, RefreshCw, Sparkles} from 'lucide-vue-next';
+import {BookOpen, ExternalLink, FileCode2, GraduationCap, Loader2, MessagesSquare, Pencil, RefreshCw, Sparkles} from 'lucide-vue-next';
 import {api, errorMessage, post, put} from '../lib/api';
 import {dateTime} from '../lib/format';
 import {isAdmin} from '../lib/session';
@@ -16,6 +17,8 @@ import UiMarkdown from '../ui/UiMarkdown.vue';
 import UiNotice from '../ui/UiNotice.vue';
 import UiSkeleton from '../ui/UiSkeleton.vue';
 import UiTabs from '../ui/UiTabs.vue';
+import ConversationsList from './ConversationsList.vue';
+import LearnedRules from './LearnedRules.vue';
 
 interface Version { id: string; content: string; summary: string | null; source: 'agent' | 'edited'; commit_sha: string | null; pr_url: string | null; created_at: string; actor: string | null }
 interface Profile { active: Version | null; history: Version[]; generating: boolean; failed: boolean; publish_pr: boolean; agent_available: boolean }
@@ -25,8 +28,8 @@ const repo = ref<any>(null), profile = ref<Profile | null>(null), config = ref<a
 const error = ref(''), configError = ref(''), editing = ref(false), draft = ref(''), busy = ref('');
 let timer: ReturnType<typeof setTimeout> | undefined;
 
-const tabs = [{id: 'ficha', label: 'Ficha del proyecto', icon: BookOpen}, {id: 'configuracion', label: 'Configuración (.sancho.yml)', icon: FileCode2}];
-const tab = computed({get: () => route.tab === 'configuracion' ? 'configuracion' : 'ficha', set: setTab});
+const tabs = [{id: 'ficha', label: 'Ficha del proyecto', icon: BookOpen}, {id: 'aprendido', label: 'Lo aprendido', icon: GraduationCap}, {id: 'conversaciones', label: 'Conversaciones', icon: MessagesSquare}, {id: 'configuracion', label: 'Configuración (.sancho.yml)', icon: FileCode2}];
+const tab = computed({get: () => tabs.some(t => t.id === route.tab) ? route.tab! : 'ficha', set: setTab});
 const sourceLabel = (v: Version) => v.source === 'agent' ? 'Escrita por Sancho' : v.summary?.startsWith('Importada') ? 'Editada en el repositorio' : `Editada por ${v.actor || 'el equipo'}`;
 
 async function load() {
@@ -157,6 +160,9 @@ gravedad_minima: medium`;
         </ol>
       </UiCard>
     </div>
+
+    <LearnedRules v-else-if="tab === 'aprendido'" :repo-id="repo.id" />
+    <ConversationsList v-else-if="tab === 'conversaciones'" :repo-id="repo.id" />
 
     <!-- Configuración del repositorio -->
     <div v-else class="stack">

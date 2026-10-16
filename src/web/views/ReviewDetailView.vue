@@ -5,7 +5,7 @@ import {computed, onBeforeUnmount, ref, watch} from 'vue';
 import {ExternalLink, Loader2, ThumbsDown, ThumbsUp} from 'lucide-vue-next';
 import {api, errorMessage, post} from '../lib/api';
 import {category, dateTime, int, publicationState, reviewState, severity, usd} from '../lib/format';
-import {crumbTail, notify, route, setTab} from '../lib/ui-state';
+import {askText, crumbTail, notify, route, setTab} from '../lib/ui-state';
 import PageHeader from '../ui/PageHeader.vue';
 import UiBadge from '../ui/UiBadge.vue';
 import UiButton from '../ui/UiButton.vue';
@@ -43,10 +43,16 @@ defineExpose({reload: load});
 function openInBitbucket() { window.open(data.value.run.url, '_blank', 'noopener'); }
 
 async function vote(findingId: string, value: 'useful' | 'false_positive') {
+  // Para un falso positivo se pide el motivo: con él, Sancho aprende a no repetirlo en este repositorio.
+  let reason: string | null = null;
+  if (value === 'false_positive') {
+    reason = await askText({title: 'Marcar como falso positivo', text: 'Si nos dices por qué no es un problema, Sancho lo aprenderá y no volverá a señalarlo en este repositorio.', inputLabel: '¿Por qué no es un problema? (opcional)', inputPlaceholder: 'Por ejemplo: esta ruta solo la usan administradores, que pueden ver todas las facturas.', confirmLabel: 'Marcar como falso positivo'});
+    if (reason === null) return;
+  }
   try {
-    await post(`/findings/${findingId}/feedback`, {vote: value});
+    const r = await post<{learned: boolean}>(`/findings/${findingId}/feedback`, {vote: value, ...(reason ? {reason} : {})});
     voted.value[findingId] = value;
-    notify('success', 'Gracias por tu opinión', value === 'useful' ? 'Marcado como útil.' : 'Marcado como falso positivo; ayuda a afinar las revisiones.');
+    notify('success', 'Gracias por tu opinión', value === 'useful' ? 'Marcado como útil.' : r.learned ? 'Sancho lo tendrá en cuenta en las próximas revisiones de este repositorio.' : 'Marcado como falso positivo.');
   } catch (e) { notify('danger', 'No se pudo guardar tu opinión', errorMessage(e)); }
 }
 </script>

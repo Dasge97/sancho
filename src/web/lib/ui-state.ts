@@ -28,11 +28,18 @@ export interface DialogOptions {
   danger?: boolean;
   /** Texto para copiar (un enlace de activación, por ejemplo). */
   copyValue?: string;
+  /** Si se indica, la ventana pide un texto (opcional) con esta etiqueta. */
+  inputLabel?: string;
+  inputPlaceholder?: string;
 }
-export const dialog = reactive<{open: boolean; options: DialogOptions | null; resolve: ((ok: boolean) => void) | null}>({open: false, options: null, resolve: null});
+export const dialog = reactive<{open: boolean; options: DialogOptions | null; value: string; resolve: ((ok: boolean) => void) | null}>({open: false, options: null, value: '', resolve: null});
 
 export function ask(options: DialogOptions): Promise<boolean> {
-  return new Promise(resolve => { Object.assign(dialog, {open: true, options, resolve}); });
+  return new Promise(resolve => { Object.assign(dialog, {open: true, options, value: '', resolve}); });
+}
+/** Como ask, pero con un campo de texto: devuelve el texto escrito, o null si se cancela. */
+export async function askText(options: DialogOptions & {inputLabel: string}): Promise<string | null> {
+  return await ask(options) ? dialog.value.trim() : null;
 }
 export function closeDialog(ok: boolean) {
   dialog.resolve?.(ok);

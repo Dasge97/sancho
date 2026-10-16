@@ -22,6 +22,7 @@ const help: Record<string, string> = {
   verificacion: 'Segunda pasada: cómo comprobar cada hallazgo antes de publicarlo y cuándo descartarlo.',
   agente: 'Se añade a las dos anteriores cuando revisa el agente de Claude: cómo explorar el repositorio y qué puede hacer.',
   ficha: 'Cómo estudia Sancho un repositorio entero para escribir su ficha del proyecto: qué mirar y qué secciones escribir.',
+  conversacion: 'Cómo contesta Sancho cuando le responden en un hilo o le preguntan con @sancho, y cuándo aprende una regla nueva.',
 };
 
 const selected = ref('deteccion');

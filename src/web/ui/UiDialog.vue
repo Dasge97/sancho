@@ -23,6 +23,10 @@ async function copy() {
       <div ref="panel" class="panel" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
         <h2 id="dialog-title" class="title">{{ dialog.options.title }}</h2>
         <p v-if="dialog.options.text" class="text">{{ dialog.options.text }}</p>
+        <div v-if="dialog.options.inputLabel" class="input">
+          <label for="dialog-input" class="input-label">{{ dialog.options.inputLabel }}</label>
+          <textarea id="dialog-input" v-model="dialog.value" class="control" rows="3" maxlength="1000" :placeholder="dialog.options.inputPlaceholder" data-autofocus />
+        </div>
         <div v-if="dialog.options.copyValue" class="copy">
           <code class="value">{{ dialog.options.copyValue }}</code>
           <UiButton size="sm" @click="copy"><template #icon><Check v-if="copied" :size="14" /><Copy v-else :size="14" /></template>{{ copied ? 'Copiado' : 'Copiar' }}</UiButton>
@@ -41,6 +45,8 @@ async function copy() {
 .panel { width: min(480px, 100%); padding: var(--space-6); background: var(--color-surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-3); }
 .title { font-size: var(--text-lg); }
 .text { margin-top: var(--space-2); color: var(--color-text-muted); font-size: var(--text-sm); }
+.input { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-4); }
+.input-label { font-size: var(--text-sm); font-weight: 600; }
 .copy { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-4); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3); background: var(--color-surface-muted); border-radius: var(--radius-md); }
 .value { flex: 1; min-width: 0; font-size: var(--text-xs); overflow-wrap: anywhere; }
 .actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-6); }

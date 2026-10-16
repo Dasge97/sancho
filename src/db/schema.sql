@@ -21,8 +21,6 @@ CREATE TABLE IF NOT EXISTS jobs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), 
 ALTER TABLE jobs ADD COLUMN IF NOT EXISTS run_after timestamptz NOT NULL DEFAULT now();
 CREATE INDEX IF NOT EXISTS jobs_ready_idx ON jobs(status,run_after,created_at);
 CREATE TABLE IF NOT EXISTS publication_operations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), run_id uuid NOT NULL REFERENCES review_runs ON DELETE CASCADE, op_key text UNIQUE NOT NULL, operation text NOT NULL, status text NOT NULL DEFAULT 'pending', payload jsonb NOT NULL, remote_id text, attempts integer NOT NULL DEFAULT 0, error_code text, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now());
-ALTER TABLE publication_operations DROP CONSTRAINT IF EXISTS publication_operations_operation_check;
-ALTER TABLE publication_operations ADD CONSTRAINT publication_operations_operation_check CHECK(operation IN ('summary_create','summary_update','inline_create'));
 CREATE TABLE IF NOT EXISTS finding_threads (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), pull_request_id uuid NOT NULL REFERENCES pull_requests ON DELETE CASCADE, fingerprint text NOT NULL, remote_comment_id text, latest_run_id uuid REFERENCES review_runs ON DELETE SET NULL, status text NOT NULL DEFAULT 'open', created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(), UNIQUE(pull_request_id,fingerprint));
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS short_title text, ADD COLUMN IF NOT EXISTS short_impact text, ADD COLUMN IF NOT EXISTS short_fix text;
 CREATE TABLE IF NOT EXISTS ai_exchanges (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), run_id uuid NOT NULL REFERENCES review_runs ON DELETE CASCADE, kind text NOT NULL, model text NOT NULL, instructions text NOT NULL, input text NOT NULL, output text, status text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
@@ -30,11 +28,16 @@ CREATE INDEX IF NOT EXISTS ai_exchanges_run_idx ON ai_exchanges(run_id, created_
 ALTER TABLE ai_exchanges ADD COLUMN IF NOT EXISTS tools jsonb NOT NULL DEFAULT '[]';
 CREATE TABLE IF NOT EXISTS prompt_versions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL CHECK(name IN ('deteccion','verificacion','agente')), content text, created_by uuid REFERENCES users ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS prompt_versions_name_idx ON prompt_versions(name, created_at DESC);
-ALTER TABLE prompt_versions DROP CONSTRAINT IF EXISTS prompt_versions_name_check;
-ALTER TABLE prompt_versions ADD CONSTRAINT prompt_versions_name_check CHECK(name IN ('deteccion','verificacion','agente','ficha'));
 CREATE TABLE IF NOT EXISTS project_profiles (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), repository_id uuid NOT NULL REFERENCES repositories ON DELETE CASCADE, commit_sha text, content text NOT NULL, summary text, source text NOT NULL CHECK(source IN ('agent','edited')), created_by uuid REFERENCES users ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now(), pr_url text);
 CREATE INDEX IF NOT EXISTS project_profiles_repo_idx ON project_profiles(repository_id, created_at DESC);
 ALTER TABLE review_runs ADD COLUMN IF NOT EXISTS walkthrough text, ADD COLUMN IF NOT EXISTS changes jsonb NOT NULL DEFAULT '[]';
 ALTER TABLE finding_threads ADD COLUMN IF NOT EXISTS resolved_at timestamptz, ADD COLUMN IF NOT EXISTS resolved_run_id uuid REFERENCES review_runs ON DELETE SET NULL, ADD COLUMN IF NOT EXISTS resolution_note text;
 ALTER TABLE publication_operations DROP CONSTRAINT IF EXISTS publication_operations_operation_check;
 ALTER TABLE publication_operations ADD CONSTRAINT publication_operations_operation_check CHECK(operation IN ('summary_create','summary_update','inline_create','resolve','reopen','reply'));
+ALTER TABLE prompt_versions DROP CONSTRAINT IF EXISTS prompt_versions_name_check;
+ALTER TABLE prompt_versions ADD CONSTRAINT prompt_versions_name_check CHECK(name IN ('deteccion','verificacion','agente','ficha','conversacion'));
+ALTER TABLE pull_requests ADD COLUMN IF NOT EXISTS paused boolean NOT NULL DEFAULT false;
+ALTER TABLE repositories ADD COLUMN IF NOT EXISTS webhook_version integer NOT NULL DEFAULT 1;
+CREATE TABLE IF NOT EXISTS pr_conversations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), pull_request_id uuid NOT NULL REFERENCES pull_requests ON DELETE CASCADE, thread_id uuid REFERENCES finding_threads ON DELETE SET NULL, comment_id text NOT NULL, author text, message text NOT NULL, kind text NOT NULL, reply text, reply_comment_id text, action text, learned_rule_id uuid, status text NOT NULL DEFAULT 'pending', created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(pull_request_id, comment_id));
+CREATE TABLE IF NOT EXISTS learned_rules (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), repository_id uuid REFERENCES repositories ON DELETE CASCADE, text text NOT NULL, source text NOT NULL CHECK(source IN ('conversacion','falso_positivo','panel')), source_ref text, active boolean NOT NULL DEFAULT true, created_by uuid REFERENCES users ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS learned_rules_repo_idx ON learned_rules(repository_id, active);

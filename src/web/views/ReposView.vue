@@ -16,7 +16,7 @@ import UiNotice from '../ui/UiNotice.vue';
 import UiSkeleton from '../ui/UiSkeleton.vue';
 import UiTabs from '../ui/UiTabs.vue';
 
-interface Repo { id: string; workspace: string; slug: string; name: string; active: boolean; updated_at: string; webhook_id: string | null; remote_uuid: string }
+interface Repo { id: string; workspace: string; slug: string; name: string; active: boolean; updated_at: string; webhook_id: string | null; webhook_outdated: boolean; remote_uuid: string }
 const {data: repos, loading, error, reload} = useLoad(() => api<Repo[]>('/repositories'));
 defineExpose({reload});
 
@@ -56,8 +56,9 @@ async function setActive(repo: Repo, active: boolean) {
 async function installWebhook(repo: Repo) {
   busy[repo.id] = 'webhook';
   try {
+    const updating = Boolean(repo.webhook_id);
     await post(`/repositories/${repo.id}/webhook`);
-    notify('success', 'Revisión automática activada', `Cada pull request de ${repo.name} se revisará en cuanto se abra o reciba cambios.`);
+    notify('success', updating ? 'Webhook actualizado' : 'Revisión automática activada', updating ? `Sancho ya puede contestar en las PR de ${repo.name} cuando alguien le responde o le escribe @sancho.` : `Cada pull request de ${repo.name} se revisará en cuanto se abra o reciba cambios.`);
     await reload();
   } catch (e) { notify('danger', 'No se pudo instalar el webhook', errorMessage(e)); }
   finally { delete busy[repo.id]; }
@@ -118,7 +119,7 @@ async function review(repo: Repo, publish: boolean) {
           </div>
           <div class="badges">
             <UiBadge :tone="repo.active ? 'success' : 'neutral'">{{ repo.active ? 'Activo' : 'Pausado' }}</UiBadge>
-            <UiBadge v-if="repo.active && !repo.remote_uuid.startsWith('sim:')" :tone="repo.webhook_id ? 'success' : 'warning'">{{ repo.webhook_id ? 'Revisión automática' : 'Sin webhook' }}</UiBadge>
+            <UiBadge v-if="repo.active && !repo.remote_uuid.startsWith('sim:')" :tone="repo.webhook_id && !repo.webhook_outdated ? 'success' : 'warning'">{{ repo.webhook_outdated ? 'Webhook antiguo' : repo.webhook_id ? 'Revisión automática' : 'Sin webhook' }}</UiBadge>
           </div>
           <UiButton size="sm" variant="ghost" @click="go('repositorio', repo.id)"><template #icon><BookOpen :size="14" /></template>Ficha y configuración</UiButton>
         </div>
@@ -140,6 +141,7 @@ async function review(repo: Repo, publish: boolean) {
 
         <div v-if="isAdmin" class="admin-actions">
           <UiButton v-if="repo.active && !repo.webhook_id && !repo.remote_uuid.startsWith('sim:')" variant="ghost" size="sm" :loading="busy[repo.id] === 'webhook'" @click="installWebhook(repo)"><template #icon><Webhook :size="14" /></template>Instalar webhook</UiButton>
+          <UiButton v-if="repo.active && repo.webhook_outdated && !repo.remote_uuid.startsWith('sim:')" variant="ghost" size="sm" :loading="busy[repo.id] === 'webhook'" title="El webhook no avisa de los comentarios, así que Sancho no puede contestar en las PR." @click="installWebhook(repo)"><template #icon><Webhook :size="14" /></template>Actualizar webhook</UiButton>
           <UiButton v-if="repo.active" variant="ghost" size="sm" :loading="busy[repo.id] === 'active'" @click="setActive(repo, false)"><template #icon><Pause :size="14" /></template>Pausar</UiButton>
           <UiButton v-else variant="primary" size="sm" :loading="busy[repo.id] === 'active'" @click="setActive(repo, true)"><template #icon><Play :size="14" /></template>Activar</UiButton>
         </div>

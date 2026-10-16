@@ -19,6 +19,8 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
   const repoFiles:Record<string,string>={};
   // Respuesta de detección que fija una prueba (por ejemplo, el seguimiento de comentarios).
   let detectionOverride:any=null;
+  // Lo que contesta el modelo cuando alguien habla con Sancho en una PR.
+  let conversationReply:any={reply:'De acuerdo.',action:'none',learn:''};
   const PROFILE_TEXT='# Ficha de api-facturas\n\n## Autenticación y permisos\n\nLas facturas se protegen con InvoicePolicy; cada factura pertenece a un usuario.\n\n'+'Detalle del proyecto. '.repeat(20);
 
   const pr=(id:number,source:string)=>({id,title:`PR ${id}`,state:'OPEN',draft:false,author:{display_name:'Ana'},source:{commit:{hash:source}},destination:{commit:{hash:'dest-1'}},links:{html:{href:`https://bitbucket.org/ws/repo/pull-requests/${id}`}}});
@@ -40,6 +42,7 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     if(url==='https://api.openai.com/v1/responses'){
       if(openaiFails)return json({error:{message:'bad request'}},400);
       const body=JSON.parse(init.body);
+      if(body.text.format.name==='sancho_conversation')return openaiResponse(conversationReply);
       if(body.text.format.name==='sancho_detection'&&detectionOverride)return openaiResponse(detectionOverride);
       if(body.text.format.name==='sancho_detection')return openaiResponse({summary:'Un hallazgo.',walkthrough:'Añade la búsqueda de facturas.',changes:[{path:'src/Controller.php',summary:'Devuelve la factura por id.'}],candidates:[{candidate_id:'x',path:'src/Controller.php',start_line:2,severity:'high',category:'authorization',title:'Falta comprobar la propiedad del registro',scenario:'Un usuario cambia el id.',impact:'Lee datos ajenos.',evidence:'find($id) sin política.',recommendation:'Aplicar la política.',short_title:'Factura ajena accesible por id',short_impact:'Un usuario lee facturas de otros cambiando el id.',short_fix:'Llama a `authorize` antes de devolverla.'}]});
       return openaiResponse({results:[{candidate_id:'candidate-0',disposition:'supported',severity:'critical',reason:'Visible en el diff.'}]});
@@ -76,6 +79,17 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     return realFetch(`${base}/api/webhooks/bitbucket/${repoId}`,{method:'POST',headers:{'content-type':'application/json','x-event-key':event,'x-hub-signature':signature},body});
   }
   async function drainQueue(){while(await processNextJob()){}}
+  let nextRemoteComment=5000;
+  const comment=(number:number,raw:string,parent?:string|number)=>sendWebhook('pullrequest:comment_created',{pullrequest:remote[number],comment:{id:++nextRemoteComment,content:{raw},user:{display_name:'Ana'},...(parent?{parent:{id:Number(parent)}}:{})}});
+  const replies=(number:number)=>calls.filter(c=>c.method==='POST'&&c.url.endsWith(`/pullrequests/${number}/comments`)&&c.body?.parent);
+  // Sesión de administración en el panel: cookie y token CSRF.
+  async function signIn(){
+    const bcrypt=(await import('bcryptjs')).default;
+    await pool.query("INSERT INTO users(email,password_hash,role) VALUES('admin@example.org',$1,'admin') ON CONFLICT(email) DO NOTHING",[await bcrypt.hash('contrasena-de-prueba',4)]);
+    const r=await realFetch(base+'/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:'admin@example.org',password:'contrasena-de-prueba'})});
+    const cookie=String(r.headers.get('set-cookie')).split(';')[0],csrf=String(r.headers.get('x-csrf-token'));
+    return (path:string,method='GET',body?:unknown)=>realFetch(base+'/api'+path,{method,headers:{cookie,'x-csrf-token':csrf,'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
+  }
 
   beforeAll(async()=>{
     process.env.DATABASE_URL=databaseUrl;
@@ -248,5 +262,86 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     expect(reply.body.content.raw).toContain('Resuelto');
     expect(calls.some(c=>c.method==='POST'&&c.url.endsWith(`/comments/${thread.remote_comment_id}/resolve`))).toBe(true);
     expect((await pool.query("SELECT t.status FROM finding_threads t JOIN pull_requests p ON p.id=t.pull_request_id WHERE p.number=42")).rows[0].status).toBe('resolved');
+  });
+
+  it('answers a reply in the thread of a finding, withdraws it and learns the reason',async()=>{
+    const thread=(await pool.query("SELECT t.id,t.remote_comment_id FROM finding_threads t JOIN pull_requests p ON p.id=t.pull_request_id WHERE p.number=44 AND t.status='open'")).rows[0];
+    expect(thread.remote_comment_id).toBeTruthy();
+    conversationReply={reply:'Tienes razón: los administradores pueden ver todas las facturas.',action:'withdraw',learn:'Los administradores pueden ver todas las facturas; no es un fallo de autorización.'};
+    calls.length=0;
+    expect((await comment(44,'Esto no es un problema: solo entran administradores.',thread.remote_comment_id)).status).toBe(202);
+    await drainQueue();
+    conversationReply={reply:'De acuerdo.',action:'none',learn:''};
+    // Al modelo le llega el hallazgo y el mensaje, con las instrucciones de conversación.
+    const sent=calls.find(c=>c.body?.text?.format?.name==='sancho_conversation')!.body;
+    expect(sent.input).toContain('<hallazgo>');
+    expect(sent.input).toContain('solo entran administradores');
+    expect(sent.instructions).toContain('Eres Sancho');
+    // Contesta en el hilo, con su marca, y cierra el comentario del problema en Bitbucket.
+    const reply=replies(44)[0];
+    expect(reply.body.parent).toEqual({id:nextRemoteComment});
+    expect(reply.body.content.raw).toContain('Tienes razón');
+    expect(reply.body.content.raw).toContain('📝 Lo tendré en cuenta');
+    expect(reply.body.content.raw).toContain('sancho-reply=');
+    expect(calls.some(c=>c.method==='POST'&&c.url.endsWith(`/comments/${thread.remote_comment_id}/resolve`))).toBe(true);
+    expect((await pool.query('SELECT status FROM finding_threads WHERE id=$1',[thread.id])).rows[0].status).toBe('dismissed');
+    expect((await pool.query("SELECT text,source FROM learned_rules")).rows).toEqual([{text:'Los administradores pueden ver todas las facturas; no es un fallo de autorización.',source:'conversacion'}]);
+    expect((await pool.query("SELECT kind,status,action FROM pr_conversations")).rows).toEqual([{kind:'thread',status:'answered',action:'withdraw'}]);
+  });
+
+  it('ignores its own comments and the conversation that does not mention it',async()=>{
+    calls.length=0;
+    await comment(44,'Revisado por Sancho · [Sancho](https://sancho.test/#?sancho-reply=x)','1');
+    await comment(44,'Lo miro mañana, Luis.');
+    await comment(44,'Un comentario suelto que responde a otro.','987654');
+    await drainQueue();
+    expect(Number((await pool.query('SELECT count(*) FROM pr_conversations')).rows[0].count)).toBe(1);
+    expect(replies(44)).toEqual([]);
+  });
+
+  it('obeys the commands: pause stops automatic reviews, review asks for one anyway, resume restores them',async()=>{
+    calls.length=0;
+    await comment(44,'@sancho pausa');await drainQueue();
+    expect(replies(44)[0].body.content.raw).toContain('Pausado');
+    expect((await pool.query('SELECT paused FROM pull_requests WHERE number=44')).rows[0].paused).toBe(true);
+    const runs=async()=>Number((await pool.query('SELECT count(*) FROM review_runs r JOIN pull_requests p ON p.id=r.pull_request_id WHERE p.number=44')).rows[0].count);
+    const before=await runs();
+    remote[44]=pr(44,'abc44-b');
+    await sendWebhook('pullrequest:updated',{pullrequest:remote[44]});await drainQueue();
+    expect(await runs()).toBe(before);
+    await comment(44,'@sancho revisa, por favor');await drainQueue();
+    expect(await runs()).toBe(before+1);
+    expect(replies(44).some(r=>r.body.content.raw.includes('Revisando'))).toBe(true);
+    await comment(44,'@Sancho reanuda');await drainQueue();
+    expect((await pool.query('SELECT paused FROM pull_requests WHERE number=44')).rows[0].paused).toBe(false);
+    await comment(44,'@sancho ayuda');await drainQueue();
+    expect(replies(44).at(-1)!.body.content.raw).toContain('@sancho revisa');
+    // Ninguna orden se confunde con aprobar o fusionar.
+    expect(calls.some(c=>/\/(approve|merge|request-changes|decline)\b/.test(c.url))).toBe(false);
+  });
+
+  it('includes what it learned in the next review of the repository',async()=>{
+    calls.length=0;remote[44]=pr(44,'abc44-c');
+    await sendWebhook('pullrequest:updated',{pullrequest:remote[44]});await drainQueue();
+    const detection=calls.find(c=>c.body?.text?.format?.name==='sancho_detection')!.body;
+    expect(detection.instructions).toContain('Los administradores pueden ver todas las facturas; no es un fallo de autorización.');
+  });
+
+  it('learns from a false positive marked with a reason, and the dashboard can list, switch off and delete it',async()=>{
+    const call=await signIn();
+    const finding=(await pool.query("SELECT f.id FROM findings f JOIN review_runs r ON r.id=f.run_id JOIN pull_requests p ON p.id=r.pull_request_id WHERE p.number=42 LIMIT 1")).rows[0];
+    const r=await call(`/findings/${finding.id}/feedback`,'POST',{vote:'false_positive',reason:'El controlador solo lo usa el panel interno.'});
+    expect(await r.json()).toEqual({ok:true,learned:true});
+    const learned=await (await call(`/repositories/${repoId}/learned`)).json();
+    expect(learned).toHaveLength(2);
+    const fp=learned.find((l:any)=>l.source==='falso_positivo');
+    expect(fp.text).toContain('Motivo del equipo: El controlador solo lo usa el panel interno.');
+    expect((await call(`/learned/${fp.id}`,'PATCH',{active:false})).status).toBe(200);
+    expect((await pool.query('SELECT active FROM learned_rules WHERE id=$1',[fp.id])).rows[0].active).toBe(false);
+    expect((await call(`/learned/${fp.id}`,'DELETE')).status).toBe(204);
+    expect(Number((await pool.query('SELECT count(*) FROM learned_rules')).rows[0].count)).toBe(1);
+    const conversations=await (await call(`/repositories/${repoId}/conversations`)).json();
+    expect(conversations.map((c:any)=>c.kind)).toEqual(expect.arrayContaining(['thread','pause','review','resume','help']));
+    expect(conversations.find((c:any)=>c.kind==='thread').learned).toContain('Los administradores');
   });
 });
