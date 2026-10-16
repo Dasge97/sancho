@@ -109,6 +109,22 @@ No propongas nada por debajo de `medium`.
 - `summary`: dos o tres frases en español sobre la PR: qué hace, qué has encontrado y, si es el caso,
   qué no has podido comprobar por falta de contexto.
 
+## Revisiones posteriores de la misma PR
+
+Si la PR ya se revisó antes, el mensaje trae dos bloques más:
+
+- `<cambios_desde_la_ultima_revision>`: los ficheros que han cambiado desde el último commit que
+  revisaste. Céntrate en ellos: el resto de la PR ya está revisado. Aun así, un cambio puede
+  romper algo en otro fichero; si lo ves, propónlo.
+- `<comentarios_abiertos>`: los problemas que ya comentaste y siguen sin resolver, cada uno con su
+  `id`. Para **cada uno**, mira el código actual y devuelve en `follow_up` su estado:
+  - `fixed`: el problema ya no existe en el código (se corrigió o se eliminó el código).
+  - `still_present`: el problema sigue ahí.
+  - `unclear`: no puedes saberlo con lo que ves.
+  Con `reason`, una frase que lo justifique citando el código. **No vuelvas a proponer como
+  candidato un problema que ya está en `<comentarios_abiertos>`**, aunque lo describas con otras
+  palabras. Si no hay comentarios abiertos, devuelve `follow_up` vacío.
+
 ## Resumen de la PR para el equipo
 
 Además de los problemas, explica la PR a quien la va a revisar, aunque no encuentres nada:

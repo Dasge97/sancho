@@ -135,6 +135,8 @@ async function vote(findingId: string, value: 'useful' | 'false_positive') {
             <div><dt>Ficheros excluidos</dt><dd class="tabular">{{ int(coverage.excluded_files?.length ?? 0) }}</dd></div>
             <div><dt>Líneas con secretos ocultadas a la IA</dt><dd class="tabular">{{ int(coverage.redacted_lines ?? 0) }}</dd></div>
             <div><dt>Problemas propuestos / confirmados</dt><dd class="tabular">{{ int(coverage.findings_received ?? 0) }} / {{ int(coverage.findings_accepted ?? 0) }}</dd></div>
+            <div v-if="coverage.follow_up?.previous_commit"><dt>Ficheros cambiados desde la revisión anterior (<code>{{ coverage.follow_up.previous_commit.slice(0, 7) }}</code>)</dt><dd class="tabular">{{ coverage.follow_up.changed_files ?? '—' }}</dd></div>
+            <div v-if="coverage.follow_up?.open_before"><dt>Comentarios anteriores: arreglados / siguen abiertos</dt><dd class="tabular">{{ coverage.follow_up.fixed }} / {{ coverage.follow_up.still_present }}</dd></div>
             <div><dt>Se ejecutó código del proyecto</dt><dd>No, nunca</dd></div>
             <div v-if="coverage.prompt_version"><dt>Versión de las instrucciones y reglas</dt><dd><code>{{ coverage.prompt_version }}</code></dd></div>
           </dl>

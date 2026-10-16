@@ -17,6 +17,8 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
   let openaiFails=false,commentId=100;
   // Ficheros .sancho del repositorio simulado (los demás ficheros devuelven PHP de ejemplo).
   const repoFiles:Record<string,string>={};
+  // Respuesta de detección que fija una prueba (por ejemplo, el seguimiento de comentarios).
+  let detectionOverride:any=null;
   const PROFILE_TEXT='# Ficha de api-facturas\n\n## Autenticación y permisos\n\nLas facturas se protegen con InvoicePolicy; cada factura pertenece a un usuario.\n\n'+'Detalle del proyecto. '.repeat(20);
 
   const pr=(id:number,source:string)=>({id,title:`PR ${id}`,state:'OPEN',draft:false,author:{display_name:'Ana'},source:{commit:{hash:source}},destination:{commit:{hash:'dest-1'}},links:{html:{href:`https://bitbucket.org/ws/repo/pull-requests/${id}`}}});
@@ -38,12 +40,14 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     if(url==='https://api.openai.com/v1/responses'){
       if(openaiFails)return json({error:{message:'bad request'}},400);
       const body=JSON.parse(init.body);
+      if(body.text.format.name==='sancho_detection'&&detectionOverride)return openaiResponse(detectionOverride);
       if(body.text.format.name==='sancho_detection')return openaiResponse({summary:'Un hallazgo.',walkthrough:'Añade la búsqueda de facturas.',changes:[{path:'src/Controller.php',summary:'Devuelve la factura por id.'}],candidates:[{candidate_id:'x',path:'src/Controller.php',start_line:2,severity:'high',category:'authorization',title:'Falta comprobar la propiedad del registro',scenario:'Un usuario cambia el id.',impact:'Lee datos ajenos.',evidence:'find($id) sin política.',recommendation:'Aplicar la política.',short_title:'Factura ajena accesible por id',short_impact:'Un usuario lee facturas de otros cambiando el id.',short_fix:'Llama a `authorize` antes de devolverla.'}]});
       return openaiResponse({results:[{candidate_id:'candidate-0',disposition:'supported',severity:'critical',reason:'Visible en el diff.'}]});
     }
     // Repositorio, rama principal y la PR de la ficha que abre Sancho.
     if(url===BB&&method==='GET')return json({mainbranch:{name:'main'}});
     if(url===BB+'/refs/branches/main')return json({target:{hash:'mainhead123'}});
+    if(url.startsWith(BB+'/diffstat/'))return json({values:[{new:{path:'src/Controller.php'},status:'modified'}]});
     if(url===BB+'/src'&&method==='POST')return new Response('',{status:201});
     if(url.startsWith(BB+'/pullrequests?q='))return json({values:[]});
     if(url===BB+'/pullrequests'&&method==='POST')return json({id:99,links:{html:{href:'https://bitbucket.org/ws/repo/pull-requests/99'}}},201);
@@ -225,5 +229,24 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     const own={...pr(47,'abc47'),source:{branch:{name:'sancho/ficha-del-proyecto'},commit:{hash:'abc47'}}};
     expect((await sendWebhook('pullrequest:created',{pullrequest:own})).status).toBe(202);
     expect(Number((await pool.query('SELECT count(*) FROM pull_requests WHERE number=47')).rows[0].count)).toBe(0);
+  });
+
+  it('follows up on open comments and closes in Bitbucket the ones a new commit fixes',async()=>{
+    await pool.query("UPDATE settings SET value='\"openai\"' WHERE key='review_engine'");
+    const thread=(await pool.query("SELECT t.remote_comment_id FROM finding_threads t JOIN pull_requests p ON p.id=t.pull_request_id WHERE p.number=42 AND t.status='open'")).rows[0];
+    expect(thread.remote_comment_id).toBeTruthy();
+    detectionOverride={summary:'Corregido.',walkthrough:'Aplica la política.',changes:[],candidates:[],follow_up:[{id:'abierto-1',status:'fixed',reason:'Ahora llama a authorize antes de devolver la factura.'}]};
+    calls.length=0;remote[42]=pr(42,'src-3');
+    await sendWebhook('pullrequest:updated',{pullrequest:remote[42]});
+    await drainQueue();
+    detectionOverride=null;
+    const detection=calls.find(c=>c.url==='https://api.openai.com/v1/responses')!.body;
+    expect(detection.input).toContain('<cambios_desde_la_ultima_revision commit_anterior="src-2">');
+    expect(detection.input).toContain('"id": "abierto-1"');
+    const reply=calls.find(c=>c.method==='POST'&&c.url.endsWith('/pullrequests/42/comments')&&c.body?.parent)!;
+    expect(reply.body.parent).toEqual({id:Number(thread.remote_comment_id)});
+    expect(reply.body.content.raw).toContain('Resuelto');
+    expect(calls.some(c=>c.method==='POST'&&c.url.endsWith(`/comments/${thread.remote_comment_id}/resolve`))).toBe(true);
+    expect((await pool.query("SELECT t.status FROM finding_threads t JOIN pull_requests p ON p.id=t.pull_request_id WHERE p.number=42")).rows[0].status).toBe('resolved');
   });
 });

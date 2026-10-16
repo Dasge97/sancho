@@ -342,6 +342,16 @@ async function profileForReview(repo:any,auth:string,destCommit:string){
   }
   return activeProfile(repo.id);
 }
+// Ficheros que cambian entre dos commits de la misma PR (para revisar solo lo nuevo). null si Bitbucket no lo da.
+async function changedSince(repo:any,auth:string,newSha:string,oldSha:string):Promise<string[]|null>{
+  const files:string[]=[];let url:string|null=bbRepoUrl(repo)+'/diffstat/'+encodeURIComponent(newSha)+'..'+encodeURIComponent(oldSha)+'?pagelen=100';
+  for(let page=0;url&&page<5;page++){
+    const r:Response=await fetch(url,{headers:{Authorization:auth},signal:AbortSignal.timeout(20000)}).catch(()=>null as any);if(!r?.ok)return null;
+    const b:any=await r.json();for(const v of b.values||[]){const p=v.new?.path||v.old?.path;if(p)files.push(String(p))}
+    url=b.next&&String(b.next).startsWith('https://api.bitbucket.org/2.0/')?b.next:null;
+  }
+  return files;
+}
 async function profileJob(job:any){
   try{
     const repo=(await pool.query('SELECT * FROM repositories WHERE id=$1',[job.payload.repo_id])).rows[0];if(!repo){await pool.query("UPDATE jobs SET status='cancelled' WHERE id=$1",[job.id]);return}
@@ -384,11 +394,22 @@ async function runReview(job:any){
     let context:{text:string;files:{path:string;reason:string;truncated:boolean}[];redacted:number;partial:boolean}={text:'',files:[],redacted:0,partial:false};
     if(source==='bitbucket'&&!agentMode){const auth='Basic '+Buffer.from(conn.email+':'+decrypt(conn.secret)).toString('base64');context=await gatherContext(filtered.diff,(path,max)=>fetchRepoFile(repo,auth,pr.run_source_sha,path,max))}
     // Datos para el modelo: van en `input`, separados de las instrucciones y marcados como no confiables.
-    const dataBlocks=['<pull_request>','Título: '+pr.title,'Repositorio: '+repo.workspace+'/'+repo.slug,'</pull_request>','','<diff>',annotateDiff(diff),'</diff>',...(agentMode?[]:['','<contexto>',context.text||'(sin ficheros de contexto)','</contexto>'])].join('\n');
+    // Seguimiento: comentarios de Sancho que siguen abiertos en esta PR y ficheros cambiados desde el
+    // último commit revisado, para revisar solo lo nuevo y cerrar lo que ya está arreglado.
+    const openThreads=(await pool.query("SELECT t.id,t.fingerprint,t.remote_comment_id,f.path,f.start_line,coalesce(f.short_title,f.title) title FROM finding_threads t JOIN findings f ON f.run_id=t.latest_run_id AND f.fingerprint=t.fingerprint WHERE t.pull_request_id=$1 AND t.status='open' ORDER BY f.path,f.start_line",[pr.id])).rows.map((t:any,i:number)=>({...t,ref:'abierto-'+(i+1)}));
+    let sinceBlock:string[]=[],sinceFiles:string[]|null=null,previousSha:string|null=null;
+    if(source==='bitbucket'){
+      // Al llegar un commit nuevo, la revisión anterior pasa a «superseded»: cuenta si llegó a terminar.
+      previousSha=(await pool.query("SELECT source_sha FROM review_runs WHERE pull_request_id=$1 AND source_sha<>$2 AND finished_at IS NOT NULL AND (status IN ('completed','partial') OR (status='superseded' AND coalesce(error_code,'')<>'snapshot_changed')) ORDER BY created_at DESC LIMIT 1",[pr.id,pr.run_source_sha])).rows[0]?.source_sha||null;
+      if(previousSha)sinceFiles=await changedSince(repo,bbAuth(conn),pr.run_source_sha,previousSha);
+      if(previousSha&&sinceFiles)sinceBlock=['','<cambios_desde_la_ultima_revision commit_anterior="'+previousSha.slice(0,12)+'">',...(sinceFiles.length?sinceFiles.map(f=>'- '+f):['(ningún fichero)']),'</cambios_desde_la_ultima_revision>'];
+    }
+    const openBlock=openThreads.length?['','<comentarios_abiertos>',JSON.stringify(openThreads.map((t:any)=>({id:t.ref,path:t.path,line:t.start_line,titulo:t.title})),null,1),'</comentarios_abiertos>']:[];
+    const dataBlocks=['<pull_request>','Título: '+pr.title,'Repositorio: '+repo.workspace+'/'+repo.slug,'</pull_request>',...sinceBlock,...openBlock,'','<diff>',annotateDiff(diff),'</diff>',...(agentMode?[]:['','<contexto>',context.text||'(sin ficheros de contexto)','</contexto>'])].join('\n');
     const rules={global:await setting('review_rules'),projectContext:repo.config?.context,repository:repo.config?.rules,profile:profile?.content,repoFileContext:repoCfg.config?.contexto,repoFileRules:rulesForFiles(repoCfg.config,changedFiles(diff))};
     const overrides=await activePrompts();
     const detectionInstructions=buildInstructions('deteccion',rules,agentMode,overrides),verificationInstructions=buildInstructions('verificacion',rules,agentMode,overrides);
-    const openai=agentMode?null:await getSecret('openai_secret'),model=agentMode?String(await setting('agent_model')||'claude-opus-5-5'):await setting('model');let candidates:any[]=[],confirmed:any[]=[],summary='Análisis completado sin hallazgos confirmados.',walkthrough:string|null=null,changes:{path:string;summary:string}[]=[];
+    const openai=agentMode?null:await getSecret('openai_secret'),model=agentMode?String(await setting('agent_model')||'claude-opus-5-5'):await setting('model');let candidates:any[]=[],confirmed:any[]=[],summary='Análisis completado sin hallazgos confirmados.',walkthrough:string|null=null,changes:{path:string;summary:string}[]=[],followUp:any[]=[];
     const coverage:any={source,engine,files_considered:filtered.files,excluded_files:filtered.excluded,truncated:rawTruncated||filtered.truncated||context.partial,context_files:context.files.length,context_list:context.files,redacted_lines:filtered.redactedLines+context.redacted,project_code_executed:false,prompt_version:shortHash(detectionInstructions+verificationInstructions),limitations:[]};if(rawTruncated||filtered.truncated||context.partial)coverage.limitations.push('Se alcanzó un límite de tamaño o lectura; el análisis puede estar incompleto.');
     // Una pregunta al modelo, por el motor que toque. Devuelve la respuesta y, con el agente, qué herramientas usó.
     const agentCalls:{tool:string;input:any}[]=[];
@@ -399,11 +420,12 @@ async function runReview(job:any){
     };
     if(!diff){coverage.limitations.push('No hay archivos elegibles para revisar tras aplicar exclusiones y límites.')}
     else if(agentMode||(openai&&model)){
-      const detectionSchema={type:'object',additionalProperties:false,required:['summary','walkthrough','changes','candidates'],properties:{summary:{type:'string'},walkthrough:{type:'string'},changes:{type:'array',items:{type:'object',additionalProperties:false,required:['path','summary'],properties:{path:{type:'string'},summary:{type:'string'}}}},candidates:{type:'array',items:{type:'object',additionalProperties:false,properties:{candidate_id:{type:'string'},path:{type:'string'},start_line:{type:'integer'},severity:{type:'string',enum:['medium','high','critical']},category:{type:'string',enum:['security','authorization','correctness','data_integrity','performance','compatibility','other']},title:{type:'string'},scenario:{type:'string'},impact:{type:'string'},evidence:{type:'string'},recommendation:{type:'string'},short_title:{type:'string'},short_impact:{type:'string'},short_fix:{type:'string'}},required:['candidate_id','path','start_line','severity','category','title','scenario','impact','evidence','recommendation','short_title','short_impact','short_fix']}}}};
+      const detectionSchema={type:'object',additionalProperties:false,required:['summary','walkthrough','changes','follow_up','candidates'],properties:{summary:{type:'string'},walkthrough:{type:'string'},follow_up:{type:'array',items:{type:'object',additionalProperties:false,required:['id','status','reason'],properties:{id:{type:'string'},status:{type:'string',enum:['fixed','still_present','unclear']},reason:{type:'string'}}}},changes:{type:'array',items:{type:'object',additionalProperties:false,required:['path','summary'],properties:{path:{type:'string'},summary:{type:'string'}}}},candidates:{type:'array',items:{type:'object',additionalProperties:false,properties:{candidate_id:{type:'string'},path:{type:'string'},start_line:{type:'integer'},severity:{type:'string',enum:['medium','high','critical']},category:{type:'string',enum:['security','authorization','correctness','data_integrity','performance','compatibility','other']},title:{type:'string'},scenario:{type:'string'},impact:{type:'string'},evidence:{type:'string'},recommendation:{type:'string'},short_title:{type:'string'},short_impact:{type:'string'},short_fix:{type:'string'}},required:['candidate_id','path','start_line','severity','category','title','scenario','impact','evidence','recommendation','short_title','short_impact','short_fix']}}}};
       const verificationSchema={type:'object',additionalProperties:false,properties:{results:{type:'array',items:{type:'object',additionalProperties:false,properties:{candidate_id:{type:'string'},disposition:{type:'string',enum:['supported','rejected','insufficient_context']},severity:{type:'string',enum:['medium','high','critical']},reason:{type:'string'}},required:['candidate_id','disposition','severity','reason']}}},required:['results']};
       const detection=await ask('sancho_detection',detectionInstructions,dataBlocks,detectionSchema);
       summary=String(detection.summary||summary);
       walkthrough=clip(String(detection.walkthrough||''),1200)||null;
+      followUp=Array.isArray(detection.follow_up)?detection.follow_up.filter((f:any)=>f&&openThreads.some((t:any)=>t.ref===f.id)):[];
       changes=(Array.isArray(detection.changes)?detection.changes:[]).filter((c:any)=>c&&c.path&&c.summary).slice(0,25).map((c:any)=>({path:String(c.path).slice(0,300),summary:clip(String(c.summary),160)}));
       candidates=Array.isArray(detection.candidates)?detection.candidates.slice(0,40).map((f:any,i:number)=>({...f,candidate_id:'candidate-'+i})):[];
       if(candidates.length){
@@ -429,6 +451,15 @@ async function runReview(job:any){
     coverage.repo_config={found:!!repoCfg.config,error:repoCfg.error};
     if(repoCfg.error)coverage.limitations.push(repoCfg.error+' Se ha revisado sin él.');
     coverage.limitations.push(...profileNotes);
+    // Comentarios anteriores ya arreglados: si esta revisión publica, se cierran también en Bitbucket
+    // (respuesta en el hilo y comentario resuelto). Sin publicar, solo se apunta en la cobertura.
+    const fixedThreads=openThreads.filter((t:any)=>followUp.some((f:any)=>f.id===t.ref&&f.status==='fixed'));
+    if(publish)for(const t of fixedThreads){
+      const note=clip(String(followUp.find((f:any)=>f.id===t.ref)?.reason||''),300);
+      await pool.query("UPDATE finding_threads SET status='resolved',resolved_at=now(),resolved_run_id=$2,resolution_note=$3,updated_at=now() WHERE id=$1",[t.id,run_id,note]);
+      if(t.remote_comment_id)await pool.query("INSERT INTO publication_operations(run_id,op_key,operation,status,payload) VALUES($1,$2,'resolve','pending',$3) ON CONFLICT(op_key) DO NOTHING",[run_id,'resolve:'+t.id+':'+run_id,JSON.stringify({thread_id:t.id,comment_id:t.remote_comment_id,note})]);
+    }
+    coverage.follow_up={previous_commit:previousSha,changed_files:sinceFiles?.length??null,open_before:openThreads.length,fixed:fixedThreads.length,still_present:followUp.filter((f:any)=>f.status==='still_present').length,closed_in_bitbucket:publish};
     for(const f of confirmed){const file=String(f.path||''),line=Number(f.start_line),safeFile=!!file&&!file.includes('..')&&!/vendor|node_modules|\.env|secret|credential/i.test(file);
       if(!safeFile||!['medium','high','critical'].includes(f.severity)||rank[f.severity]<rank[min]||!f.title||!f.evidence||!Number.isInteger(line)||line<1||(!repo.remote_uuid.startsWith('sim:')&&!addedLineExists(diff,file,line)))continue;
       const fp=findingFingerprint(repo.id,number,{path:file,category:String(f.category||'other'),title:String(f.title)});
@@ -477,6 +508,22 @@ async function publishRun(job:any){
       }
       await pool.query("INSERT INTO finding_threads(pull_request_id,fingerprint,remote_comment_id,latest_run_id) VALUES($1,$2,$3,$4) ON CONFLICT(pull_request_id,fingerprint) DO UPDATE SET remote_comment_id=COALESCE(finding_threads.remote_comment_id,EXCLUDED.remote_comment_id),latest_run_id=EXCLUDED.latest_run_id,status='open',updated_at=now()",[row.pull_request_id,finding.fingerprint,commentId,runId]);
       await pool.query("UPDATE publication_operations SET status='published',remote_id=$2,error_code=NULL,updated_at=now() WHERE op_key=$1",['finding:'+row.pull_request_id+':'+finding.fingerprint,commentId]);
+    }
+    // Comentarios que esta revisión da por arreglados: respuesta en su hilo y comentario resuelto.
+    // remote_id guarda la respuesta ya enviada, para no repetirla si hay que reintentar.
+    const resolves=(await pool.query("SELECT id,payload,remote_id FROM publication_operations WHERE run_id=$1 AND operation='resolve' AND status='pending'",[runId])).rows;
+    for(const op of resolves){
+      const cid=String(op.payload.comment_id);
+      if(!op.remote_id){
+        const raw='✅ **Resuelto** en el commit `'+String(row.source_sha).slice(0,7)+'`.'+(op.payload.note?' '+op.payload.note:'')+' · ['+'Sancho'+']('+sanchoLink(linkBase,{review:runId,'sancho-reply':op.id})+')';
+        const reply=await fetch(commentsUrl,{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json'},body:JSON.stringify({content:{raw},parent:{id:Number(cid)}}),signal:AbortSignal.timeout(20000)});
+        if(!reply.ok)throw new Error('bitbucket_'+reply.status);
+        await pool.query('UPDATE publication_operations SET remote_id=$2,updated_at=now() WHERE id=$1',[op.id,String(((await reply.json()) as any).id)]);
+      }
+      const resolved=await fetch(commentsUrl+'/'+encodeURIComponent(cid)+'/resolve',{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(20000)});
+      // 400/409: el hilo ya estaba resuelto (por ejemplo, a mano). No es un error.
+      if(!resolved.ok&&![400,409].includes(resolved.status))throw new Error('bitbucket_'+resolved.status);
+      await pool.query("UPDATE publication_operations SET status='published',error_code=NULL,updated_at=now() WHERE id=$1",[op.id]);
     }
     let existingId=row.summary_comment_id;
     if(!existingId){const hit=remoteComments.find((x:any)=>{const text=String(x.content?.raw||'');return text.includes('sancho-summary='+runId)||text.includes('<!-- sancho-summary:'+runId+' -->')});if(hit)existingId=String(hit.id)}

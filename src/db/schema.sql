@@ -35,3 +35,6 @@ ALTER TABLE prompt_versions ADD CONSTRAINT prompt_versions_name_check CHECK(name
 CREATE TABLE IF NOT EXISTS project_profiles (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), repository_id uuid NOT NULL REFERENCES repositories ON DELETE CASCADE, commit_sha text, content text NOT NULL, summary text, source text NOT NULL CHECK(source IN ('agent','edited')), created_by uuid REFERENCES users ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now(), pr_url text);
 CREATE INDEX IF NOT EXISTS project_profiles_repo_idx ON project_profiles(repository_id, created_at DESC);
 ALTER TABLE review_runs ADD COLUMN IF NOT EXISTS walkthrough text, ADD COLUMN IF NOT EXISTS changes jsonb NOT NULL DEFAULT '[]';
+ALTER TABLE finding_threads ADD COLUMN IF NOT EXISTS resolved_at timestamptz, ADD COLUMN IF NOT EXISTS resolved_run_id uuid REFERENCES review_runs ON DELETE SET NULL, ADD COLUMN IF NOT EXISTS resolution_note text;
+ALTER TABLE publication_operations DROP CONSTRAINT IF EXISTS publication_operations_operation_check;
+ALTER TABLE publication_operations ADD CONSTRAINT publication_operations_operation_check CHECK(operation IN ('summary_create','summary_update','inline_create','resolve','reopen','reply'));
