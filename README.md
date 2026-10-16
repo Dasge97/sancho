@@ -49,7 +49,7 @@ Every adventure needs someone to ask the awkward question: **"What if this user 
 | --- | --- | --- |
 | Security flaws, authorization gaps and regressions it can prove. No style nitpicks, no opinions. | Three sentences per problem: what is wrong, why it matters and how to fix it, on the line that causes it. | Sancho comments. It never approves, blocks or merges: merging stays your team's call. |
 
-It is built for **PHP, Symfony and Laravel** teams on Bitbucket Cloud, and it is especially useful when the code is also written by an AI.
+It is built for teams working with **PHP (Laravel, Symfony), JavaScript and TypeScript (Node, React, Vue) and Python (Django, Flask, FastAPI)** on Bitbucket Cloud, and it is especially useful when the code is also written by an AI.
 
 ## What it looks like in your pull request
 
@@ -90,14 +90,17 @@ And if you reply, it answers in the same thread:
 | **Reviews every pull request on its own** | As soon as it is opened or updated, through one webhook per repository. Drafts are skipped. |
 | **Knows your project** | The first time, it studies the whole repository and writes a profile: how it is organised, how it is protected and what to watch. It reads it before every review and proposes it as a pull request in `.sancho/proyecto.md` so the team can correct it. |
 | **Reads the code like a person would** | A Claude agent works on a checkout of the repository and decides what to open: routes, policies, models and callers of what changed. |
-| **Uses tools that run nothing** | gitleaks looks for secrets in added lines, and `php -l` checks that the changed PHP files compile. |
+| **Uses tools that run nothing** | gitleaks looks for secrets in added lines, `php -l` checks that the changed PHP files compile, and Opengrep flags unsafe patterns, which the model checks before anything is published. |
 | **Double-checks itself** | A second agent tries to knock down every finding before it is published, and Sancho checks that it sits on an added line. |
 | **Proposes the fix** | When the change fits on the commented line, it leaves it as a code suggestion. |
 | **Answers in the pull request** | It replies in the thread of its comments, withdraws what is not a problem, and handles `@sancho revisa`, `pausa`, `reanuda` and `ayuda`. |
 | **Learns from your team** | What you explain in pull requests, and false positives marked with a reason, become rules for that repository. |
 | **Follows each problem to the end** | On a new commit it focuses on what changed; when a problem is fixed, it says so in the thread and marks it resolved. |
 | **Tells "clean" from "not reviewed"** | A partial or failed review is shown as such, never as a review without problems. |
-| **Configured from the repository** | A `.sancho.yml` with context, per-folder rules, exclusions and a minimum severity, read from the target branch. |
+| **Configured from the repository** | A `.sancho.yml` with context, per-folder rules, exclusions, a minimum severity, a profile and merge checks, read from the target branch. |
+| **Standard or strict review** | The strict profile also comments on minor details (🔵), at most five per pull request, never style. |
+| **Checks before merging** | The team writes its own, and the summary says whether each one is met, not met or does not apply. |
+| **A summary that helps share the work** | Review effort from 1 to 5 with estimated minutes, and the open pull requests that touch the same files. |
 | **Adapts to your team** | Global and per-repository rules, and the AI instructions editable from the dashboard, with version history. |
 | **Measures how often it is right** | The Calidad (Quality) screen shows the hit rate by type, repository and instructions version. `npm run eval` also runs labelled cases. |
 | **Keeps spending in check** | Cost per review and per day, and a monthly budget that warns without stopping the work. |
@@ -242,7 +245,11 @@ rutas:                 # rules for some paths only
     reglas: "Only reachable with the can:admin middleware."
 excluir:               # paths not to review
   - "database/seeders/**"
-gravedad_minima: medium   # minimum severity: medium, high or critical
+gravedad_minima: medium   # minimum severity: low, medium, high or critical
+perfil: exigente          # profile: estandar or exigente (also minor details)
+comprobaciones:           # merge checks
+  - nombre: Reversible migrations
+    descripcion: Every new migration has a down() method that undoes it.
 ```
 
 The project profile lives in `.sancho/proyecto.md`. If the team edits it in the repository, Sancho uses that version from the next review on.
@@ -265,7 +272,7 @@ TEST_DATABASE_URL=postgres://… npm test   # plus the full flow with Bitbucket 
 docker compose exec api node dist-server/simulator.js   # sample data without connecting anything
 ```
 
-**Measuring quality with labelled cases.** [`evals/casos/`](evals/casos/) holds six changes to a Laravel project: four with a known problem and two clean ones. `npm run eval` runs them through the same detection and verification as the worker and reports precision, recall and cost. It calls OpenAI for real:
+**Measuring quality with labelled cases.** [`evals/casos/`](evals/casos/) holds thirteen changes to Laravel, Express and Django projects and a browser script: eight with a known problem and five clean ones. `npm run eval` runs them through the same detection and verification as the worker and reports precision, recall and cost. It calls OpenAI for real:
 
 ```bash
 OPENAI_API_KEY=… npm run eval -- --modelo gpt-6.1-sol --precios 2,10

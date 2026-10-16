@@ -143,3 +143,14 @@ Rama `mejoras`. Probado con Bitbucket, OpenAI y el cerebro simulados: **52 prueb
 - **Conversación real:** no retira un problema ante una excusa que no lo resuelve, no cierra un comentario con «ya lo he arreglado» sin commit nuevo, contesta bien una pregunta con `@sancho` y pausa la PR con `@sancho pausa`.
 - **Banco de pruebas** (`npm run eval`, en el servidor): primera pasada 100 % de precisión y 75 % de cobertura; fallaba la asignación masiva porque el contexto no incluía el modelo `User`. Con el arreglo de `src/context.ts`, 100 % de precisión y de cobertura en 2 pasadas; los casos limpios, sin comentarios. 0,18 USD.
 - **Sin confirmar:** si Bitbucket permite aplicar el bloque `suggestion` con un clic.
+
+## Más cerca de CodeRabbit (16-10-2026)
+
+Solo Bitbucket, sin Jira (decisión del usuario). 65 pruebas pasan.
+
+- **Formato nuevo de los comentarios:** tabla con gravedad, tipo, problema, por qué importa y arreglo, sugerencia de código y enlaces «Ver detalle», «Me ha servido» y «Es un falso positivo». Los enlaces de voto funcionan desde Bitbucket. Probado en real (PR #9 de `nexops/sancho-pruebas`). La sugerencia de código se aplica con un clic en Bitbucket (comprobado por el usuario en la PR #2).
+- **Arreglado:** el resumen decía «sin problemas» si un commit arreglaba un problema y dejaba otro abierto.
+- **Perfil exigente** (D29), **comprobaciones antes de fusionar** y **resumen con esfuerzo y PR relacionadas** (D30, D31). Probado en real: la comprobación sale «No cumple» en la PR #2 y «Cumple» en la PR #7, y la #7 enlaza la #2 por tocar los mismos ficheros.
+- **JavaScript, TypeScript y Python** (D32). Banco de pruebas con 13 casos (Laravel, Express, Django y un script del navegador): 100 % de precisión y de cobertura en 2 pasadas, 0,43 USD.
+- **Opengrep** (D33). En una PR real con una XSS en el navegador, Opengrep la señaló pero la verificación la descartó por no ver qué página cargaba el script. Corregidas las instrucciones de verificación; tras el cambio, la PR #10 recibe el comentario.
+- **Pendiente:** probar el motor de agente en real. Bloqueado: la sesión de Claude de codehive sigue caducada (`ssh codehive`, `claude`, `/login`).

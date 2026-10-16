@@ -47,7 +47,7 @@ Toda aventura necesita a alguien que haga la pregunta incómoda: **«¿Y si ese 
 | --- | --- | --- |
 | Fallos de seguridad, de autorización y regresiones que puede demostrar. Nada de estilo ni de opiniones. | Tres frases por problema: qué pasa, por qué importa y cómo se arregla, en la línea que lo provoca. | Sancho comenta. Nunca aprueba, bloquea ni fusiona: la decisión sigue siendo de tu equipo. |
 
-Está pensado para equipos de **PHP, Symfony y Laravel** en Bitbucket Cloud, y es especialmente útil cuando quien programa también es una IA.
+Está pensado para equipos que trabajan con **PHP (Laravel, Symfony), JavaScript y TypeScript (Node, React, Vue) y Python (Django, Flask, FastAPI)** en Bitbucket Cloud, y es especialmente útil cuando quien programa también es una IA.
 
 ## Así se ve en tu pull request
 
@@ -88,14 +88,17 @@ Y si le respondes, contesta en el mismo hilo:
 | **Revisa sola cada pull request** | En cuanto se abre o recibe cambios, gracias a un webhook por repositorio. Los borradores se omiten. |
 | **Conoce tu proyecto** | La primera vez estudia el repositorio entero y escribe su ficha: cómo se organiza, cómo se protege y qué vigilar. La lee antes de cada revisión y la propone como PR en `.sancho/proyecto.md` para que el equipo la corrija. |
 | **Lee el código como lo haría una persona** | Un agente de Claude trabaja sobre una copia del repositorio y decide qué abrir: rutas, políticas, modelos y quién llama a lo que cambia. |
-| **Usa herramientas que no ejecutan nada** | gitleaks busca secretos en las líneas añadidas y `php -l` comprueba que los PHP cambiados compilan. |
+| **Usa herramientas que no ejecutan nada** | gitleaks busca secretos en las líneas añadidas, `php -l` comprueba que los PHP cambiados compilan y Opengrep señala patrones inseguros, que el modelo comprueba antes de publicar. |
 | **Se revisa a sí mismo** | Un segundo agente intenta tumbar cada hallazgo antes de publicarlo, y Sancho comprueba que está en una línea añadida. |
 | **Propone el arreglo** | Cuando el cambio cabe en la línea comentada, lo deja como sugerencia de código. |
 | **Contesta en la PR** | Responde en el hilo de sus comentarios, retira lo que no es un problema y atiende `@sancho revisa`, `pausa`, `reanuda` y `ayuda`. |
 | **Aprende de tu equipo** | Lo que le explicáis en las PR y los falsos positivos marcados con su motivo se convierten en reglas del repositorio. |
 | **Sigue cada problema hasta el final** | Con un commit nuevo se fija en lo que ha cambiado; si un problema ya está arreglado, lo dice en el hilo y lo marca como resuelto. |
 | **Distingue «limpio» de «no revisado»** | Una revisión parcial o fallida se ve como tal, nunca como una revisión sin problemas. |
-| **Se configura desde el repositorio** | Un `.sancho.yml` con contexto, reglas por carpeta, exclusiones y gravedad mínima, leído de la rama de destino. |
+| **Se configura desde el repositorio** | Un `.sancho.yml` con contexto, reglas por carpeta, exclusiones, gravedad mínima, perfil y comprobaciones, leído de la rama de destino. |
+| **Revisión estándar o exigente** | La exigente también comenta detalles menores (🔵), como mucho cinco por PR, nunca estilo. |
+| **Comprobaciones antes de fusionar** | El equipo escribe las suyas y el resumen dice de cada una si se cumple, no se cumple o no aplica. |
+| **Un resumen que ayuda a repartir el trabajo** | Esfuerzo de revisión del 1 al 5 con los minutos estimados, y las PR abiertas que tocan los mismos ficheros. |
 | **Se adapta a tu equipo** | Reglas generales y por repositorio, y las instrucciones de la IA editables desde el panel, con historial de versiones. |
 | **Mide cuánto acierta** | La pantalla Calidad da el acierto por tipo, por repositorio y por versión de las instrucciones. Además, `npm run eval` pasa casos etiquetados. |
 | **Controla el gasto** | Coste por revisión y por día, y un presupuesto mensual que avisa sin frenar el trabajo. |
@@ -240,7 +243,11 @@ rutas:
     reglas: "Solo accesible con el middleware can:admin."
 excluir:
   - "database/seeders/**"
-gravedad_minima: medium   # medium, high o critical
+gravedad_minima: medium   # low, medium, high o critical
+perfil: exigente          # estandar o exigente (también detalles menores)
+comprobaciones:
+  - nombre: Migraciones reversibles
+    descripcion: Toda migración nueva tiene un método down() que deshace el cambio.
 ```
 
 La ficha del proyecto vive en `.sancho/proyecto.md`. Si el equipo la edita en el repositorio, Sancho usa esa versión desde la siguiente revisión.
@@ -263,7 +270,7 @@ TEST_DATABASE_URL=postgres://… npm test   # y el recorrido completo con Bitbuc
 docker compose exec api node dist-server/simulator.js   # datos de ejemplo sin conectar nada
 ```
 
-**Medir la calidad con casos etiquetados.** [`evals/casos/`](evals/casos/) tiene seis cambios de un proyecto Laravel: cuatro con un problema conocido y dos limpios. `npm run eval` los pasa por la misma detección y verificación que el worker y da la precisión, la cobertura y el coste. Llama de verdad a OpenAI:
+**Medir la calidad con casos etiquetados.** [`evals/casos/`](evals/casos/) tiene trece cambios de proyectos Laravel, Express y Django, y un script del navegador: ocho con un problema conocido y cinco limpios. `npm run eval` los pasa por la misma detección y verificación que el worker y da la precisión, la cobertura y el coste. Llama de verdad a OpenAI:
 
 ```bash
 OPENAI_API_KEY=… npm run eval -- --modelo gpt-6.1-sol --precios 2,10
