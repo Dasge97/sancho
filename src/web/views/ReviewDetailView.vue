@@ -14,6 +14,7 @@ import UiEmpty from '../ui/UiEmpty.vue';
 import UiNotice from '../ui/UiNotice.vue';
 import UiSkeleton from '../ui/UiSkeleton.vue';
 import UiTabs from '../ui/UiTabs.vue';
+import InlineCode from '../ui/InlineCode.vue';
 
 const props = defineProps<{id: string}>();
 const data = ref<any>(null), error = ref(''), voted = ref<Record<string, string>>({});
@@ -98,17 +99,17 @@ async function vote(findingId: string, value: 'useful' | 'false_positive') {
               <UiBadge :tone="severity(f.severity)[1]">{{ severity(f.severity)[0] }}</UiBadge>
               <span class="cat">{{ category(f.category) }}</span>
             </div>
-            <h3 class="finding-title">{{ f.short_title || f.title }}</h3>
+            <h3 class="finding-title"><InlineCode :text="f.short_title || f.title" /></h3>
             <code class="where">{{ f.path }}:{{ f.start_line }}</code>
-            <p v-if="f.short_impact" class="impact">{{ f.short_impact }}</p>
-            <p v-if="f.short_fix" class="fix"><strong>Arreglo:</strong> {{ f.short_fix }}</p>
+            <p v-if="f.short_impact" class="impact"><InlineCode :text="f.short_impact" /></p>
+            <p v-if="f.short_fix" class="fix"><strong>Arreglo:</strong> <InlineCode :text="f.short_fix" /></p>
             <details class="more">
               <summary>Ver el detalle completo</summary>
               <dl>
-                <dt>Qué puede pasar</dt><dd>{{ f.scenario }}</dd>
-                <dt>Impacto</dt><dd>{{ f.impact }}</dd>
-                <dt>Evidencia en el código</dt><dd>{{ f.evidence }}</dd>
-                <dt>Propuesta</dt><dd>{{ f.recommendation }}</dd>
+                <dt>Qué puede pasar</dt><dd><InlineCode :text="f.scenario" /></dd>
+                <dt>Impacto</dt><dd><InlineCode :text="f.impact" /></dd>
+                <dt>Evidencia en el código</dt><dd><InlineCode :text="f.evidence" /></dd>
+                <dt>Propuesta</dt><dd><InlineCode :text="f.recommendation" /></dd>
               </dl>
             </details>
             <div class="feedback">
