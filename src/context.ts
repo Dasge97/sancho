@@ -86,6 +86,9 @@ export function relatedFiles(changed: {path: string; content: string}[], map: [s
       const model = fqcn.match(/^(.*)\\Models\\(\w+)$/);
       if (model) add(classToPath(`${model[1]}\\Policies\\${model[2]}Policy`, map), `política del modelo ${fqcn}`);
     }
+    // Laravel: el usuario de la sesión no se importa con `use`, pero su modelo dice qué columnas se
+    // pueden asignar ($fillable o $guarded), que es lo que decide una asignación masiva.
+    if (/->user\(\)|\bauth\(\)->user\(\)|\bAuth::user\(\)/.test(file.content)) add(classToPath('App\\Models\\User', map), `modelo del usuario de la sesión, usado en ${file.path}`);
   }
   if (changed.some(c => /controller/i.test(c.path))) {
     for (const path of ['routes/web.php', 'routes/api.php']) add(path, 'rutas de la aplicación (Laravel)');

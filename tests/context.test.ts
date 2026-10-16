@@ -58,6 +58,11 @@ describe('related files from PHP imports and the composer autoload', () => {
     const related = relatedFiles([{path: 'app/Http/Controllers/InvoiceController.php', content: controller}], map).map(r => r.path);
     expect(related).toEqual(['app/Models/Invoice.php', 'app/Policies/InvoicePolicy.php', 'routes/web.php', 'routes/api.php', 'config/routes.yaml', 'config/packages/security.yaml']);
   });
+  it('adds the User model when the code uses the session user, so mass assignment can be judged', () => {
+    const profile = '<?php\nnamespace App\\Http\\Controllers;\nclass ProfileController {\n  public function update($request) { $request->user()->update($request->all()); }\n}\n';
+    const related = relatedFiles([{path: 'app/Http/Controllers/ProfileController.php', content: profile}], map);
+    expect(related[0]).toEqual({path: 'app/Models/User.php', reason: 'modelo del usuario de la sesión, usado en app/Http/Controllers/ProfileController.php'});
+  });
 });
 
 describe('context gathering', () => {
