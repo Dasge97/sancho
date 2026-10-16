@@ -141,6 +141,13 @@ The agent uses the server's Claude subscription or an Anthropic key. As an alter
     <td><img src="docs/img/reglas.png" alt="Global and per-repository review rules."><br><sub><b>Team rules.</b> What to watch and what to ignore, globally and per repository.</sub></td>
     <td><img src="docs/img/oscuro.png" alt="What a review covered, in dark mode, with the files the agent read."><br><sub><b>Dark mode.</b> And which files the agent opened in each review.</sub></td>
   </tr>
+  <tr>
+    <td><img src="docs/img/conversaciones.png" alt="Conversations tab of a repository: team messages in pull requests and Sancho's replies, such as pausing a pull request or explaining why a parameter is properly validated."><br><sub><b>Conversations.</b> What the team tells it in pull requests, and its answers.</sub></td>
+    <td><img src="docs/img/aprendido.png" alt="What it learned tab: a rule taken from a conversation, with a switch to turn it off and a Delete button."><br><sub><b>What it learned.</b> Rules that come from conversations and false positives.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/img/calidad.png" alt="Quality screen: hit rate, published problems, problems fixed by a commit and false positives, with tables by instructions version, type and severity."><br><sub><b>Quality.</b> How much of what it flags helps the team, by instructions version, type and repository.</sub></td>
+  </tr>
 </table>
 
 <p align="center">

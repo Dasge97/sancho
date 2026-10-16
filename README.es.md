@@ -139,6 +139,13 @@ El agente usa la suscripción de Claude del servidor o una clave de Anthropic. C
     <td><img src="docs/img/reglas.png" alt="Reglas de revisión generales y por repositorio."><br><sub><b>Reglas del equipo.</b> Qué vigilar y qué ignorar, en general y por repositorio.</sub></td>
     <td><img src="docs/img/oscuro.png" alt="Qué se ha revisado en una revisión, en modo oscuro, con los ficheros que leyó el agente."><br><sub><b>Modo oscuro.</b> Y qué ficheros abrió el agente en cada revisión.</sub></td>
   </tr>
+  <tr>
+    <td><img src="docs/img/conversaciones.png" alt="Pestaña Conversaciones de un repositorio: mensajes del equipo en las PR y las respuestas de Sancho, como pausar una PR o explicar por qué un parámetro está bien validado."><br><sub><b>Conversaciones.</b> Lo que el equipo le dice en las PR y lo que contesta.</sub></td>
+    <td><img src="docs/img/aprendido.png" alt="Pestaña Lo aprendido: una regla sacada de una conversación, con su interruptor para desactivarla y el botón Borrar."><br><sub><b>Lo aprendido.</b> Reglas que salen de las conversaciones y de los falsos positivos.</sub></td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/img/calidad.png" alt="Pantalla Calidad: acierto, problemas publicados, arreglados con un commit y falsos positivos, con tablas por versión de las instrucciones, tipo y gravedad."><br><sub><b>Calidad.</b> Cuánto de lo que señala le sirve al equipo, por versión de las instrucciones, tipo y repositorio.</sub></td>
+  </tr>
 </table>
 
 <p align="center">

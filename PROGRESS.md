@@ -134,3 +134,12 @@ Rama `mejoras`. Probado con Bitbucket, OpenAI y el cerebro simulados: **52 prueb
 - **Análisis estático** (D27): `src/static-analysis.ts`. Probado con las herramientas reales dentro de la imagen: gitleaks 8.28.0 detecta un token de GitHub sin que su valor aparezca en el informe, y PHP 8.4.26 detecta un error de sintaxis en la línea correcta.
 - **Calidad** (D28): pantalla «Calidad» (`src/quality.ts`, `GET /api/quality`) y `npm run eval` con 6 casos en `evals/casos`. **Sin ejecutar todavía contra el modelo real.**
 - **Arreglado:** la migración volvía a aplicar en cada arranque CHECK antiguos de `publication_operations` y `prompt_versions`. Con una fila `resolve` o una instrucción de conversación guardada, el servidor no habría arrancado.
+
+## Pruebas reales con Bitbucket y OpenAI (16-10-2026)
+
+- El workspace `dasge97` está en solo lectura (el plan gratuito supera su límite de usuarios). Las pruebas se hacen en un repositorio privado nuevo, `nexops/sancho-pruebas`, con la conexión de Sancho cambiada al workspace `nexops`. El repositorio antiguo de `dasge97` queda pausado.
+- Motor: OpenAI (`gpt-6.1-sol`). La sesión de Claude del servidor sigue caducada.
+- **8 PR reales, revisadas y publicadas solas por webhook.** Las 4 con errores reciben comentarios correctos: path traversal en la descarga del PDF, edición sin autorización y asignación masiva (con sugerencia de código), `orWhere` que expone facturas ajenas, y una clave `sk_live_` (la encuentra gitleaks). Las 4 limpias (README, filtro validado, borrado con política, accesor del modelo) no reciben ningún comentario de problemas: solo el resumen «sin problemas encontrados».
+- **Conversación real:** no retira un problema ante una excusa que no lo resuelve, no cierra un comentario con «ya lo he arreglado» sin commit nuevo, contesta bien una pregunta con `@sancho` y pausa la PR con `@sancho pausa`.
+- **Banco de pruebas** (`npm run eval`, en el servidor): primera pasada 100 % de precisión y 75 % de cobertura; fallaba la asignación masiva porque el contexto no incluía el modelo `User`. Con el arreglo de `src/context.ts`, 100 % de precisión y de cobertura en 2 pasadas; los casos limpios, sin comentarios. 0,18 USD.
+- **Sin confirmar:** si Bitbucket permite aplicar el bloque `suggestion` con un clic.
