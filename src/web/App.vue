@@ -13,6 +13,7 @@ import UiSkeleton from './ui/UiSkeleton.vue';
 import LoginView from './views/LoginView.vue';
 import HomeView from './views/HomeView.vue';
 import ReposView from './views/ReposView.vue';
+import RepoDetailView from './views/RepoDetailView.vue';
 import ReviewsView from './views/ReviewsView.vue';
 import ReviewDetailView from './views/ReviewDetailView.vue';
 import UsageView from './views/UsageView.vue';
@@ -32,7 +33,7 @@ const admin: NavItem[] = [
   {view: 'equipo', label: 'Equipo', icon: Users},
   {view: 'auditoria', label: 'Auditoría', icon: History},
 ];
-const views: Record<ViewName, Component> = {inicio: HomeView, repositorios: ReposView, revisiones: ReviewsView, revision: ReviewDetailView, consumo: UsageView, ajustes: SettingsView, equipo: TeamView, auditoria: AuditView};
+const views: Record<ViewName, Component> = {inicio: HomeView, repositorios: ReposView, repositorio: RepoDetailView, revisiones: ReviewsView, revision: ReviewDetailView, consumo: UsageView, ajustes: SettingsView, equipo: TeamView, auditoria: AuditView};
 const themes: {value: ThemeChoice; label: string; icon: Component}[] = [
   {value: 'light', label: 'Claro', icon: Sun}, {value: 'dark', label: 'Oscuro', icon: Moon}, {value: 'system', label: 'Sistema', icon: Monitor},
 ];
@@ -40,7 +41,7 @@ const themes: {value: ThemeChoice; label: string; icon: Component}[] = [
 const checking = ref(true), menuOpen = ref(false);
 const adminOnly: ViewName[] = ['ajustes', 'equipo', 'auditoria'];
 const current = computed(() => adminOnly.includes(route.view) && !isAdmin.value ? 'inicio' : route.view);
-const activeNav = computed(() => current.value === 'revision' ? 'revisiones' : current.value);
+const activeNav = computed(() => current.value === 'revision' ? 'revisiones' : current.value === 'repositorio' ? 'repositorios' : current.value);
 
 // Migas de pan: la sección y la pantalla; el último tramo lo pone la pantalla cuando lo sabe.
 interface Crumb { label: string; view?: ViewName }
@@ -49,6 +50,7 @@ const crumbs = computed<Crumb[]>(() => {
   const base: Crumb[] = [{label: 'Sancho', view: 'inicio'}];
   if (current.value === 'inicio') return [...base, {label: 'Panel'}];
   if (current.value === 'revision') return [...base, {label: 'Revisiones', view: 'revisiones'}, {label: crumbTail.value || 'Revisión'}];
+  if (current.value === 'repositorio') return [...base, {label: 'Repositorios', view: 'repositorios'}, {label: crumbTail.value || 'Repositorio'}];
   const item = all.find(i => i.view === current.value)!;
   const section = adminOnly.includes(current.value) ? [{label: 'Administración'}] : [];
   return [...base, ...section, crumbTail.value ? {label: item.label, view: item.view} : {label: item.label}, ...(crumbTail.value ? [{label: crumbTail.value}] : [])];
@@ -135,7 +137,7 @@ onMounted(async () => {
       </header>
 
       <main class="content">
-        <component :is="views[current]" v-bind="current === 'revision' && route.id ? {id: route.id} : {}" :key="current + (route.id || '')" />
+        <component :is="views[current]" v-bind="(current === 'revision' || current === 'repositorio') && route.id ? {id: route.id} : {}" :key="current + (route.id || '')" />
       </main>
     </div>
   </div>

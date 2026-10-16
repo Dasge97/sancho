@@ -47,6 +47,8 @@ const auditActions: Record<string, string> = {
   'repository.rules.updated': 'Cambió las reglas de revisión de un repositorio',
   'prompt.updated': 'Cambió las instrucciones de la IA',
   'prompt.reset': 'Restauró las instrucciones originales de la IA',
+  'repository.profile.updated': 'Editó la ficha del proyecto de un repositorio',
+  'repository.profile.requested': 'Pidió a Sancho que estudie un repositorio',
 };
 export const auditAction = (a: string) => auditActions[a] || a;
 

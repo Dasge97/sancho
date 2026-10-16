@@ -101,7 +101,7 @@ function insideCheckout(root: string): HookCallback {
 }
 
 const Task = z.object({
-  mode: z.literal('review'),
+  mode: z.enum(['review', 'profile']),
   checkout: z.object({workspace: z.string().min(1), slug: z.string().min(1), commit: z.string().regex(/^[0-9a-f]{7,40}$/i), email: z.string().min(1), token: z.string().min(1)}),
   model: z.string().min(1).max(120),
   instructions: z.string().min(1),

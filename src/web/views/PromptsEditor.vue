@@ -21,6 +21,7 @@ const help: Record<string, string> = {
   deteccion: 'Primera pasada: qué buscar, qué no comentar, cómo medir la gravedad y cómo escribir cada hallazgo.',
   verificacion: 'Segunda pasada: cómo comprobar cada hallazgo antes de publicarlo y cuándo descartarlo.',
   agente: 'Se añade a las dos anteriores cuando revisa el agente de Claude: cómo explorar el repositorio y qué puede hacer.',
+  ficha: 'Cómo estudia Sancho un repositorio entero para escribir su ficha del proyecto: qué mirar y qué secciones escribir.',
 };
 
 const selected = ref('deteccion');

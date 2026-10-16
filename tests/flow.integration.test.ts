@@ -15,6 +15,9 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
   const remote:Record<number,any>={};
   const calls:{method:string,url:string,body?:any}[]=[];
   let openaiFails=false,commentId=100;
+  // Ficheros .sancho del repositorio simulado (los demás ficheros devuelven PHP de ejemplo).
+  const repoFiles:Record<string,string>={};
+  const PROFILE_TEXT='# Ficha de api-facturas\n\n## Autenticación y permisos\n\nLas facturas se protegen con InvoicePolicy; cada factura pertenece a un usuario.\n\n'+'Detalle del proyecto. '.repeat(20);
 
   const pr=(id:number,source:string)=>({id,title:`PR ${id}`,state:'OPEN',draft:false,author:{display_name:'Ana'},source:{commit:{hash:source}},destination:{commit:{hash:'dest-1'}},links:{html:{href:`https://bitbucket.org/ws/repo/pull-requests/${id}`}}});
   const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json'}});
@@ -23,10 +26,11 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
   async function fakeFetch(input:any,init:any={}){
     const url=String(input),method=init.method||'GET';
     if(url.startsWith(base))return realFetch(input,init);
-    calls.push({method,url,body:init.body?JSON.parse(init.body):undefined});
+    calls.push({method,url,body:typeof init.body==='string'?JSON.parse(init.body):init.body instanceof FormData?Object.fromEntries(init.body):undefined});
     if(url==='http://cerebro.test/tasks'){
       // El cerebro simulado: el agente "lee" la política y responde con el esquema pedido.
       const task=JSON.parse(init.body);
+      if(task.mode==='profile')return json({ok:true,output:{ficha:PROFILE_TEXT,resumen:'API de facturas en Laravel.'},text:'',numTurns:30,costUsd:0.5,usage:{input_tokens:90000,output_tokens:4000},subscription:true,toolCalls:[{tool:'Read',input:{file_path:'composer.json'}}]});
       const verification=task.instructions.includes('escéptico');
       const output=verification?{results:[{candidate_id:'candidate-0',disposition:'supported',severity:'high',reason:'La política existe pero no se aplica.'}]}:{summary:'Un hallazgo.',candidates:[{candidate_id:'x',path:'src/Controller.php',start_line:2,severity:'high',category:'authorization',title:'Factura ajena accesible por id',scenario:'Cambia el id.',impact:'Lee datos ajenos.',evidence:'find($id) sin authorize; la política InvoicePolicy existe.',recommendation:'Aplicar la política.',short_title:'Factura ajena accesible por id',short_impact:'Un usuario lee facturas de otros cambiando el id.',short_fix:'Llama a `authorize` antes de devolverla.'}]};
       return json({ok:true,output,text:'',numTurns:4,costUsd:0.12,usage:{input_tokens:5000,output_tokens:600},subscription:true,toolCalls:[{tool:'Grep',input:{pattern:'InvoicePolicy'}},{tool:'Read',input:{file_path:'app/Policies/InvoicePolicy.php'}}]});
@@ -37,6 +41,12 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
       if(body.text.format.name==='sancho_detection')return openaiResponse({summary:'Un hallazgo.',candidates:[{candidate_id:'x',path:'src/Controller.php',start_line:2,severity:'high',category:'authorization',title:'Falta comprobar la propiedad del registro',scenario:'Un usuario cambia el id.',impact:'Lee datos ajenos.',evidence:'find($id) sin política.',recommendation:'Aplicar la política.',short_title:'Factura ajena accesible por id',short_impact:'Un usuario lee facturas de otros cambiando el id.',short_fix:'Llama a `authorize` antes de devolverla.'}]});
       return openaiResponse({results:[{candidate_id:'candidate-0',disposition:'supported',severity:'critical',reason:'Visible en el diff.'}]});
     }
+    // Repositorio, rama principal y la PR de la ficha que abre Sancho.
+    if(url===BB&&method==='GET')return json({mainbranch:{name:'main'}});
+    if(url===BB+'/refs/branches/main')return json({target:{hash:'mainhead123'}});
+    if(url===BB+'/src'&&method==='POST')return new Response('',{status:201});
+    if(url.startsWith(BB+'/pullrequests?q='))return json({values:[]});
+    if(url===BB+'/pullrequests'&&method==='POST')return json({id:99,links:{html:{href:'https://bitbucket.org/ws/repo/pull-requests/99'}}},201);
     const prMatch=url.match(/\/pullrequests\/(\d+)(\/.*)?$/);
     if(prMatch){
       const current=remote[Number(prMatch[1])],rest=prMatch[2]||'';
@@ -47,7 +57,12 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
       if(rest.startsWith('/comments'))return json({id:++commentId});
     }
     if(url.startsWith(BB+'/pullrequests?'))return json({values:Object.values(remote)});
-    if(url.startsWith(BB+'/src/'))return new Response('<?php\nreturn $this->json($repo->find($id));\n',{status:200});
+    if(url.startsWith(BB+'/src/')){
+      const path=decodeURIComponent(url.replace(/^.*\/src\/[^/]+\//,''));
+      if(path in repoFiles)return new Response(repoFiles[path],{status:200});
+      if(path.startsWith('.sancho'))return json({error:'not found'},404);
+      return new Response('<?php\nreturn $this->json($repo->find($id));\n',{status:200});
+    }
     return json({error:'unexpected '+url},500);
   }
 
@@ -145,9 +160,21 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     await sendWebhook('pullrequest:created',{pullrequest:remote[44]});
     await drainQueue();
     const tasks=calls.filter(c=>c.url==='http://cerebro.test/tasks');
-    expect(tasks).toHaveLength(2);
+    // Primera revisión del repositorio con el agente: antes de revisar, estudia el proyecto y escribe la ficha.
+    expect(tasks).toHaveLength(3);
+    expect(tasks[0].body.mode).toBe('profile');
+    expect(tasks[0].body.checkout.commit).toBe('mainhead123');
+    expect(tasks[0].body.instructions).toContain('ficha del proyecto');
+    const commit=calls.find(c=>c.url===BB+'/src'&&c.method==='POST')!;
+    expect(commit.body.branch).toBe('sancho/ficha-del-proyecto');
+    expect(commit.body['.sancho/proyecto.md']).toContain('# Ficha de api-facturas');
+    const prCreated=calls.find(c=>c.url===BB+'/pullrequests'&&c.method==='POST')!;
+    expect(prCreated.body).toMatchObject({source:{branch:{name:'sancho/ficha-del-proyecto'}},destination:{branch:{name:'main'}},close_source_branch:true});
+    expect((await pool.query('SELECT source,commit_sha,pr_url FROM project_profiles')).rows).toEqual([{source:'agent',commit_sha:'mainhead123',pr_url:'https://bitbucket.org/ws/repo/pull-requests/99'}]);
     expect(calls.some(c=>c.url==='https://api.openai.com/v1/responses')).toBe(false);
-    const detection=tasks[0].body;
+    const detection=tasks[1].body;
+    expect(detection.instructions).toContain('## Ficha del proyecto');
+    expect(detection.instructions).toContain('Las facturas se protegen con InvoicePolicy');
     expect(detection.checkout).toEqual({workspace:'ws',slug:'repo',commit:'abc44',email:'bot@example.org',token:'bitbucket-token'});
     expect(detection.model).toBe('claude-opus-5-5');
     expect(detection.instructions).toContain('tienes el repositorio completo');
@@ -162,7 +189,7 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     expect(run.coverage.context_list).toEqual([{path:'app/Policies/InvoicePolicy.php',reason:'leído por el agente',truncated:false}]);
     expect(run.coverage.agent_searches).toBe(2);
     const usage=(await pool.query("SELECT provider,model,cost_usd FROM usage_calls WHERE provider='claude-agent'")).rows;
-    expect(usage).toHaveLength(2);
+    expect(usage).toHaveLength(3);
     expect(usage[0]).toMatchObject({model:'claude-opus-5-5 · suscripción',cost_usd:'0'});
     const exchange=(await pool.query("SELECT tools FROM ai_exchanges WHERE model LIKE 'claude-opus-5-5%' ORDER BY created_at LIMIT 1")).rows[0];
     expect(exchange.tools[1]).toEqual({tool:'Read',input:{file_path:'app/Policies/InvoicePolicy.php'}});
@@ -177,5 +204,24 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     expect(detection.instructions).toContain('Explora solo la carpeta app/ y lee las políticas antes de opinar.');
     expect(detection.instructions).not.toContain('tienes el repositorio completo');
     expect(detection.instructions).toContain('Eres Sancho');
+    // Con la ficha ya escrita, no se vuelve a estudiar el repositorio.
+    expect(calls.filter(c=>c.url==='http://cerebro.test/tasks').map(c=>c.body.mode)).toEqual(['review','review']);
+  });
+
+  it('applies the .sancho.yml of the destination branch and skips the pull requests that Sancho opens',async()=>{
+    repoFiles['.sancho.yml']='reglas: |\n  Regla general del yml.\nrutas:\n  - ruta: "src/**"\n    reglas: "Regla solo para src."\n  - ruta: "docs/**"\n    reglas: "Regla que no aplica."\ngravedad_minima: critical\n';
+    calls.length=0;remote[46]=pr(46,'abc46');
+    await sendWebhook('pullrequest:created',{pullrequest:remote[46]});
+    await drainQueue();
+    const detection=calls.find(c=>c.url==='http://cerebro.test/tasks')!.body;
+    expect(detection.instructions).toContain('Regla general del yml.');
+    expect(detection.instructions).toContain('Regla solo para src.');
+    expect(detection.instructions).not.toContain('Regla que no aplica.');
+    // gravedad_minima: critical descarta el hallazgo alto que confirma la verificación.
+    expect(Number((await pool.query("SELECT count(*) FROM findings f JOIN review_runs r ON r.id=f.run_id JOIN pull_requests p ON p.id=r.pull_request_id WHERE p.number=46")).rows[0].count)).toBe(0);
+    delete repoFiles['.sancho.yml'];
+    const own={...pr(47,'abc47'),source:{branch:{name:'sancho/ficha-del-proyecto'},commit:{hash:'abc47'}}};
+    expect((await sendWebhook('pullrequest:created',{pullrequest:own})).status).toBe(202);
+    expect(Number((await pool.query('SELECT count(*) FROM pull_requests WHERE number=47')).rows[0].count)).toBe(0);
   });
 });

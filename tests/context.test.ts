@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {annotateDiff, changedFiles, classToPath, gatherContext, phpUses, psr4Map, relatedFiles} from '../src/context.js';
 import {buildInstructions} from '../src/prompts.js';
+import {parseRepoConfig, pathMatches, rulesForFiles} from '../src/repo-config.js';
 
 const diff = [
   'diff --git a/app/Http/Controllers/InvoiceController.php b/app/Http/Controllers/InvoiceController.php',
@@ -105,5 +106,32 @@ describe('instructions sent to the model', () => {
     expect(edited).toContain('tienes el repositorio completo');
     expect(edited).toContain('Regla.');
     expect(buildInstructions('deteccion', {}, false, {deteccion: '   '})).toContain('Eres Sancho');
+  });
+});
+
+describe('.sancho.yml in the repository', () => {
+  it('parses the config and explains invalid fields in Spanish', () => {
+    expect(parseRepoConfig(null)).toEqual({config: null, error: null});
+    expect(parseRepoConfig('reglas: "Usa FormRequest."\nexcluir: ["legacy/**"]').config).toEqual({reglas: 'Usa FormRequest.', excluir: ['legacy/**']});
+    expect(parseRepoConfig('gravedad_minima: low').error).toContain('gravedad_minima');
+    expect(parseRepoConfig('desconocido: 1').error).toContain('no válido');
+    expect(parseRepoConfig('reglas: [').error).toContain('no es YAML válido');
+  });
+  it('matches path patterns and keeps only the rules of the touched paths', () => {
+    expect(pathMatches('app/Http/Controllers/**', 'app/Http/Controllers/Admin/UserController.php')).toBe(true);
+    expect(pathMatches('*.blade.php', 'resources/views/a.blade.php')).toBe(false);
+    expect(pathMatches('resources/**/*.blade.php', 'resources/views/a.blade.php')).toBe(true);
+    const rules = rulesForFiles({reglas: 'General.', rutas: [{ruta: 'app/**', reglas: 'De app.'}, {ruta: 'docs/**', reglas: 'De docs.'}]}, ['app/Models/User.php']);
+    expect(rules).toContain('General.');
+    expect(rules).toContain('De app.');
+    expect(rules).not.toContain('De docs.');
+  });
+  it('puts the project profile and the .sancho.yml rules into the instructions', () => {
+    const text = buildInstructions('deteccion', {profile: 'Ficha: usa InvoicePolicy.', repoFileContext: 'API de facturas.', repoFileRules: 'Regla del yml.'});
+    expect(text).toContain('## Ficha del proyecto');
+    expect(text).toContain('Ficha: usa InvoicePolicy.');
+    expect(text).toContain('API de facturas.');
+    expect(text).toContain('Regla del yml.');
+    expect(text.indexOf('## Ficha del proyecto')).toBeLessThan(text.indexOf('## Reglas y contexto del equipo'));
   });
 });

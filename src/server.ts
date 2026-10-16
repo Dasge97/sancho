@@ -2,7 +2,8 @@ import 'dotenv/config';
 import 'express-async-errors';
 import express from 'express'; import session from 'express-session'; import PgSession from 'connect-pg-simple'; import helmet from 'helmet'; import rateLimit from 'express-rate-limit'; import bcrypt from 'bcryptjs'; import crypto from 'node:crypto'; import path from 'node:path'; import {fileURLToPath,pathToFileURL} from 'node:url'; import {z} from 'zod';
 import {pool,migrate} from './db.js';
-import {annotateDiff,gatherContext} from './context.js';
+import {annotateDiff,changedFiles,gatherContext} from './context.js';
+import {parseRepoConfig,rulesForFiles,type RepoConfig} from './repo-config.js';
 import {buildInstructions,defaultPrompt,PROMPT_NAMES,shortHash,type PromptName,type PromptOverrides} from './prompts.js';
 import {findingFingerprint,hmacSha256,safeEqual,webhookEventKey,renderSummary,renderInlineComment,sanchoLink,clip,addedLineExists,filterReviewDiff,redactSecretsFromText,normalizePullRequest,isSessionlessPath,shouldAutoPublish} from './domain.js';
 const app=express(), PgStore=PgSession(session), port=Number(process.env.PORT||3000), prod=process.env.NODE_ENV==='production',secureCookie=process.env.SESSION_COOKIE_SECURE?process.env.SESSION_COOKIE_SECURE==='true':prod;
@@ -29,6 +30,36 @@ app.patch('/api/repositories/:id',adminOnly,async(req,res)=>{const p=z.object({a
 // Reglas de un repositorio: de qué va el proyecto, qué vigilar o ignorar y rutas que no se revisan.
 // Se guardan en repositories.config y se añaden a las instrucciones del modelo en cada revisión.
 app.put('/api/repositories/:id/rules',adminOnly,async(req,res)=>{const p=z.object({context:z.string().max(4000),rules:z.string().max(8000),exclusions:z.array(z.string().min(1).max(250)).max(50)}).safeParse(req.body);if(!p.success)return res.status(422).json({error:'Datos no válidos: revisa la longitud de los textos y las rutas excluidas.'});const {rows}=await pool.query("UPDATE repositories SET config=config||$1::jsonb,updated_at=now() WHERE id=$2 RETURNING id,config",[JSON.stringify(p.data),req.params.id]);if(!rows[0])return res.status(404).json({error:'Repositorio no encontrado'});await audit((req.session as any).user.id,'repository.rules.updated',req.params.id);res.json(rows[0])});
+// Ficha del proyecto de un repositorio: la activa, las últimas versiones y si se está generando.
+app.get('/api/repositories/:id/profile',signedIn,async(req,res)=>{
+  const repo=(await pool.query('SELECT id FROM repositories WHERE id=$1',[req.params.id])).rows[0];if(!repo)return res.status(404).json({error:'Repositorio no encontrado'});
+  const {rows}=await pool.query('SELECT p.id,p.content,p.summary,p.source,p.commit_sha,p.pr_url,p.created_at,u.email actor FROM project_profiles p LEFT JOIN users u ON u.id=p.created_by WHERE p.repository_id=$1 ORDER BY p.created_at DESC LIMIT 15',[repo.id]);
+  const failed=(await pool.query("SELECT 1 FROM jobs WHERE kind='profile' AND status='failed' AND payload->>'repo_id'=$1 AND created_at>coalesce((SELECT max(created_at) FROM project_profiles WHERE repository_id=$2),'-infinity')",[repo.id,repo.id])).rowCount!>0;
+  res.json({active:rows[0]||null,history:rows,generating:await profileJobPending(repo.id),failed,publish_pr:await setting('profile_publish_pr')!==false,agent_available:!!CEREBRO_URL});
+});
+app.put('/api/repositories/:id/profile',adminOnly,async(req,res)=>{
+  const p=z.object({content:z.string().min(200).max(40000)}).safeParse(req.body);if(!p.success)return res.status(422).json({error:'La ficha tiene que tener entre 200 y 40 000 caracteres.'});
+  const repo=(await pool.query('SELECT * FROM repositories WHERE id=$1',[req.params.id])).rows[0];if(!repo)return res.status(404).json({error:'Repositorio no encontrado'});
+  const conn=await setting('bitbucket_connection');const real=!repo.remote_uuid.startsWith('sim:')&&conn;
+  const saved=await saveProfile(repo,real?bbAuth(conn):null,p.data.content.trim(),{source:'edited',userId:(req.session as any).user.id});
+  await audit((req.session as any).user.id,'repository.profile.updated',repo.id);
+  res.json({ok:true,pr_url:saved.prUrl,pr_error:saved.prError?'No se pudo actualizar la PR de la ficha en Bitbucket. La ficha sí se ha guardado.':null});
+});
+app.post('/api/repositories/:id/profile/regenerate',adminOnly,async(req,res)=>{
+  const repo=(await pool.query('SELECT id,remote_uuid FROM repositories WHERE id=$1',[req.params.id])).rows[0];if(!repo)return res.status(404).json({error:'Repositorio no encontrado'});
+  if(!CEREBRO_URL)return res.status(409).json({error:'El motor de agente no está instalado: la ficha la escribe el agente de Claude.'});
+  if(repo.remote_uuid.startsWith('sim:'))return res.status(409).json({error:'Los repositorios de ejemplo no tienen código que estudiar.'});
+  await enqueueProfile(repo.id,'pedido desde el panel');await audit((req.session as any).user.id,'repository.profile.requested',repo.id);
+  res.status(202).json({queued:true});
+});
+// El .sancho.yml de la rama principal, para enseñarlo en el panel con sus errores si los tiene.
+app.get('/api/repositories/:id/repo-config',signedIn,async(req,res)=>{
+  const repo=(await pool.query('SELECT * FROM repositories WHERE id=$1',[req.params.id])).rows[0];if(!repo)return res.status(404).json({error:'Repositorio no encontrado'});
+  if(repo.remote_uuid.startsWith('sim:'))return res.json({found:false,text:null,error:null,branch:null});
+  const conn=await setting('bitbucket_connection');if(!conn)return res.status(409).json({error:'Configura la conexión con Bitbucket'});
+  try{const auth=bbAuth(conn),head=await mainHead(repo,auth),file=await fetchRepoFile(repo,auth,head.hash,'.sancho.yml',20000);const parsed=parseRepoConfig(file?.text??null);res.json({found:!!file,text:file?.text??null,error:parsed.error,branch:head.branch})}
+  catch{res.status(502).json({error:'No se pudo leer el repositorio en Bitbucket'})}
+});
 app.get('/api/reviews',signedIn,async(_req,res)=>res.json((await pool.query('SELECT r.*,p.number,p.title,p.url,repo.name repository FROM review_runs r JOIN pull_requests p ON p.id=r.pull_request_id JOIN repositories repo ON repo.id=r.repository_id ORDER BY r.created_at DESC LIMIT 100')).rows));
 app.get('/api/reviews/:id',signedIn,async(req,res)=>{const run=await pool.query('SELECT r.*,p.number,p.title,p.url,repo.name repository FROM review_runs r JOIN pull_requests p ON p.id=r.pull_request_id JOIN repositories repo ON repo.id=r.repository_id WHERE r.id=$1',[req.params.id]);if(!run.rows[0])return res.status(404).json({error:'Revisión no encontrada'});const [findings,usage]=await Promise.all([pool.query('SELECT * FROM findings WHERE run_id=$1 ORDER BY severity,path,start_line',[req.params.id]),pool.query('SELECT provider,model,input_tokens,output_tokens,cost_usd,status,created_at FROM usage_calls WHERE run_id=$1',[req.params.id])]);res.json({run:run.rows[0],findings:findings.rows,usage:usage.rows})});
 app.post('/api/repositories/:id/reviews',signedIn,async(req,res)=>{const p=z.object({number:z.number().int().positive(),publish:z.boolean().default(false),idempotency_key:z.string().min(8)}).safeParse(req.body);if(!p.success)return res.status(422).json({error:'Datos no válidos'});const repo=await pool.query('SELECT * FROM repositories WHERE id=$1',[req.params.id]);if(!repo.rows[0]||!repo.rows[0].active)return res.status(404).json({error:'Repositorio no conectado o pausado'});if(p.data.publish&&(req.session as any).user.role!=='admin')return res.status(403).json({error:'Solo administración puede solicitar publicación'});const result=await createReview(repo.rows[0],p.data.number,'manual',p.data.publish,(req.session as any).user.id+':'+req.params.id+':'+p.data.idempotency_key);if(result.error)return res.status(404).json(result);res.status(result.created?202:200).json(result)});
@@ -36,7 +67,7 @@ app.get('/api/usage',signedIn,async(_req,res)=>{const {rows}=await pool.query("S
 // Instrucciones de la IA editables desde el panel. Cada cambio es una versión nueva; una versión
 // con contenido nulo significa «volver al original de prompts/». La activa es la más reciente.
 async function activePrompts():Promise<PromptOverrides>{const {rows}=await pool.query('SELECT DISTINCT ON (name) name,content FROM prompt_versions ORDER BY name,created_at DESC');return Object.fromEntries(rows.map(r=>[r.name,r.content]))}
-const promptLabels:Record<PromptName,string>={deteccion:'Detección',verificacion:'Verificación',agente:'Agente'};
+const promptLabels:Record<PromptName,string>={deteccion:'Detección',verificacion:'Verificación',agente:'Agente',ficha:'Ficha del proyecto'};
 app.get('/api/prompts',adminOnly,async(_req,res)=>{
   const {rows}=await pool.query("SELECT p.id,p.name,p.content,p.created_at,u.email actor,row_number() OVER (PARTITION BY p.name ORDER BY p.created_at DESC) n FROM prompt_versions p LEFT JOIN users u ON u.id=p.created_by");
   res.json(PROMPT_NAMES.map(name=>{const history=rows.filter(r=>r.name===name&&r.n<=15).sort((a,b)=>Number(a.n)-Number(b.n));const active=history[0];return {name,label:promptLabels[name],original:defaultPrompt(name),content:active?.content??defaultPrompt(name),customized:!!active?.content,updated_at:active?.created_at??null,updated_by:active?.actor??null,history:history.map(h=>({id:h.id,created_at:h.created_at,actor:h.actor,content:h.content}))}}));
@@ -56,7 +87,7 @@ app.put('/api/prompts/:name',adminOnly,async(req,res)=>{
 app.get('/api/engine',adminOnly,async(_req,res)=>{let agent:any={configured:!!CEREBRO_URL,reachable:false,mode:null};if(CEREBRO_URL){try{const r=await fetch(CEREBRO_URL.replace(/\/$/,'')+'/health',{signal:AbortSignal.timeout(5000)});const b:any=await r.json();agent={configured:true,reachable:r.ok,mode:b.mode||null}}catch{}}res.json({engine:await reviewEngine(),agent,agent_model:await setting('agent_model')||'claude-opus-5-5'})});
 // Los secretos no salen nunca, ni cifrados: de OpenAI solo si hay clave; de Bitbucket, workspace y correo.
 app.get('/api/settings',adminOnly,async(_req,res)=>{const {rows}=await pool.query("SELECT key,value,version,updated_at FROM settings WHERE key<>'bitbucket_secret'");res.json(rows.map(r=>r.key==='openai_secret'?{...r,value:{configured:true}}:r.key==='bitbucket_connection'?{...r,value:{configured:true,workspace:r.value?.workspace,email:r.value?.email}}:r))});
-app.put('/api/settings',adminOnly,async(req,res)=>{const p=z.object({monthly_budget_usd:z.number().nonnegative().nullable().optional(),model:z.string().min(1).max(120).optional(),language:z.string().max(20).optional(),min_severity:z.enum(['medium','high','critical']).optional(),input_price_per_million:z.number().nonnegative().nullable().optional(),output_price_per_million:z.number().nonnegative().nullable().optional(),auto_publish:z.boolean().optional(),review_rules:z.string().max(8000).optional(),review_engine:z.enum(['agent','openai']).optional(),agent_model:z.string().min(1).max(120).optional(),review_exclusions:z.array(z.string().min(1).max(250)).max(50).optional()}).safeParse(req.body);if(!p.success)return res.status(422).json({error:'Datos no válidos'});for(const [k,v] of Object.entries(p.data))await pool.query('INSERT INTO settings(key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,version=settings.version+1,updated_at=now()',[k,JSON.stringify(v)]);await audit((req.session as any).user.id,'settings.updated','global');res.json({ok:true})});
+app.put('/api/settings',adminOnly,async(req,res)=>{const p=z.object({monthly_budget_usd:z.number().nonnegative().nullable().optional(),model:z.string().min(1).max(120).optional(),language:z.string().max(20).optional(),min_severity:z.enum(['medium','high','critical']).optional(),input_price_per_million:z.number().nonnegative().nullable().optional(),output_price_per_million:z.number().nonnegative().nullable().optional(),auto_publish:z.boolean().optional(),profile_publish_pr:z.boolean().optional(),review_rules:z.string().max(8000).optional(),review_engine:z.enum(['agent','openai']).optional(),agent_model:z.string().min(1).max(120).optional(),review_exclusions:z.array(z.string().min(1).max(250)).max(50).optional()}).safeParse(req.body);if(!p.success)return res.status(422).json({error:'Datos no válidos'});for(const [k,v] of Object.entries(p.data))await pool.query('INSERT INTO settings(key,value) VALUES($1,$2) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,version=settings.version+1,updated_at=now()',[k,JSON.stringify(v)]);await audit((req.session as any).user.id,'settings.updated','global');res.json({ok:true})});
 app.put('/api/settings/openai-secret',adminOnly,async(req,res)=>{const p=z.object({api_key:z.string().min(20)}).safeParse(req.body);if(!p.success)return res.status(422).json({error:'Clave no válida'});try{const encrypted=encrypt(p.data.api_key);await pool.query("INSERT INTO settings(key,value) VALUES('openai_secret',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,version=settings.version+1,updated_at=now()",[JSON.stringify(encrypted)]);await audit((req.session as any).user.id,'openai.secret.rotated','global');res.json({configured:true,masked:'••••••••'+p.data.api_key.slice(-4)})}catch{res.status(503).json({error:'Falta SANCHO_ENCRYPTION_KEY de 32 bytes'})}});
 app.post('/api/settings/test-openai',adminOnly,async(_req,res)=>{const key=await getSecret('openai_secret');if(!key)return res.status(409).json({error:'Configura primero la clave API'});const model=await setting('model');if(!model)return res.status(409).json({error:'Configura explícitamente un modelo compatible'});try{const result=await callOpenAI(model,key,{instructions:'Responde solo con el objeto JSON pedido.',input:'Devuelve el objeto JSON con ok=true.'},null,'sancho_compatibility_check',{type:'object',properties:{ok:{type:'boolean'}},required:['ok'],additionalProperties:false});if(result.ok!==true)return res.status(502).json({ok:false,error:'El modelo no respetó la salida estructurada'});res.json({ok:true,model,structured_output:true})}catch{res.status(502).json({ok:false,error:'El modelo no aceptó la salida estructurada solicitada'})}});
 app.post('/api/connections',adminOnly,async(req,res)=>{const p=z.object({workspace:z.string().min(1),email:z.string().email(),api_token:z.string().min(1)}).safeParse(req.body);if(!p.success)return res.status(422).json({error:'Datos no válidos'});try{const secret=encrypt(p.data.api_token);await pool.query("INSERT INTO settings(key,value) VALUES('bitbucket_connection',$1) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,version=settings.version+1,updated_at=now()",[JSON.stringify({workspace:p.data.workspace,email:p.data.email,secret})]);await audit((req.session as any).user.id,'bitbucket.connection.saved','global');res.json({saved:true,verified:false,message:'Credencial guardada; ejecuta la prueba de conexión'})}catch{res.status(503).json({error:'Falta SANCHO_ENCRYPTION_KEY de 32 bytes'})}});
@@ -116,6 +147,8 @@ async function createReview(repo:any,number:number,trigger:string,publish=false,
 }
 async function enqueue(repo:any,remotePr:any,src:string,dst:string,trigger:string,publish=false,idempotencyKey?:string){
   const pr=normalizePullRequest(remotePr);if(!pr.number)throw new Error('pull_request_number_missing');
+  // Las PR que abre el propio Sancho (la ficha del proyecto) no se revisan.
+  if(pr.source_branch.startsWith('sancho/'))return {id:null,status:'skipped',created:false};
   const c=await pool.connect();
   try{
     await c.query('BEGIN');
@@ -158,7 +191,7 @@ export async function processNextJob():Promise<boolean>{
     await c.query('COMMIT');
   }catch(e){await c.query('ROLLBACK');throw e}finally{c.release()}
   if(!job)return false;
-  if(job.kind==='publish')await publishRun(job);else if(job.kind==='reconcile')await reconcileJob(job);else await runReview(job);
+  if(job.kind==='publish')await publishRun(job);else if(job.kind==='reconcile')await reconcileJob(job);else if(job.kind==='profile')await profileJob(job);else await runReview(job);
   return true;
 }
 async function worker(){
@@ -218,9 +251,9 @@ async function callOpenAI(model:string,key:string,prompt:{instructions:string;in
 // por defecto si CEREBRO_URL está configurado.
 const CEREBRO_URL=process.env.CEREBRO_URL||'';
 async function reviewEngine():Promise<'agent'|'openai'>{const chosen=await setting('review_engine');if(chosen==='agent'||chosen==='openai')return chosen;return CEREBRO_URL?'agent':'openai'}
-async function callAgent(runId:string,schemaName:string,task:{checkout:any;model:string;instructions:string;input:string;schema:any}){
-  let response:Response;
-  try{response=await fetch(CEREBRO_URL.replace(/\/$/,'')+'/tasks',{method:'POST',headers:{Authorization:'Bearer '+(process.env.CEREBRO_TOKEN||''),'Content-Type':'application/json'},body:JSON.stringify({mode:'review',maxTurns:40,timeoutMs:600000,...task}),signal:AbortSignal.timeout(660000)})}
+async function callAgent(runId:string|null,schemaName:string,task:{checkout:any;model:string;instructions:string;input:string;schema:any;mode?:'review'|'profile';maxTurns?:number;timeoutMs?:number}){
+  let response:Response;const timeoutMs=task.timeoutMs??600000;
+  try{response=await fetch(CEREBRO_URL.replace(/\/$/,'')+'/tasks',{method:'POST',headers:{Authorization:'Bearer '+(process.env.CEREBRO_TOKEN||''),'Content-Type':'application/json'},body:JSON.stringify({mode:'review',maxTurns:40,...task,timeoutMs}),signal:AbortSignal.timeout(timeoutMs+60000)})}
   catch{throw new Error('cerebro_network_error')}
   const body:any=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(body.error==='checkout_failed'?'cerebro_checkout_failed':'cerebro_'+response.status);
@@ -243,6 +276,80 @@ async function fetchRepoFile(repo:any,auth:string,commit:string,path:string,maxB
   }catch{return null}
 }
 
+/* ---- Ficha del proyecto ----
+   El agente estudia el repositorio entero (rama principal) y escribe una ficha que se añade a las
+   instrucciones de cada revisión. Se guarda por versiones en project_profiles, se edita en el panel
+   y, si está activado, Sancho la propone como PR con .sancho/proyecto.md. Si el equipo la cambia en
+   el repositorio, esa versión se importa. */
+const PROFILE_BRANCH='sancho/ficha-del-proyecto',PROFILE_PATH='.sancho/proyecto.md',PROFILE_MAX_AGE_DAYS=14;
+const bbAuth=(conn:any)=>'Basic '+Buffer.from(conn.email+':'+decrypt(conn.secret)).toString('base64');
+const bbRepoUrl=(repo:any)=>'https://api.bitbucket.org/2.0/repositories/'+encodeURIComponent(repo.workspace)+'/'+encodeURIComponent(repo.slug);
+const contentHash=(text:string)=>crypto.createHash('sha256').update(text.replace(/\r\n/g,'\n').trim()).digest('hex');
+async function mainHead(repo:any,auth:string):Promise<{branch:string;hash:string}>{
+  const r=await fetch(bbRepoUrl(repo),{headers:{Authorization:auth},signal:AbortSignal.timeout(20000)});if(!r.ok)throw new Error('bitbucket_'+r.status);
+  const branch=String(((await r.json()) as any).mainbranch?.name||'main');
+  const b=await fetch(bbRepoUrl(repo)+'/refs/branches/'+encodeURIComponent(branch),{headers:{Authorization:auth},signal:AbortSignal.timeout(20000)});if(!b.ok)throw new Error('bitbucket_'+b.status);
+  return {branch,hash:String(((await b.json()) as any).target?.hash||'')};
+}
+const activeProfile=async(repoId:string)=>(await pool.query('SELECT * FROM project_profiles WHERE repository_id=$1 ORDER BY created_at DESC LIMIT 1',[repoId])).rows[0]||null;
+async function profileJobPending(repoId:string){return (await pool.query("SELECT 1 FROM jobs WHERE kind='profile' AND status IN ('queued','running') AND payload->>'repo_id'=$1",[repoId])).rowCount!>0}
+async function enqueueProfile(repoId:string,reason:string){if(!await profileJobPending(repoId))await pool.query("INSERT INTO jobs(kind,payload) VALUES('profile',$1)",[JSON.stringify({repo_id:repoId,reason})])}
+
+// Propone la ficha como PR: un commit con .sancho/proyecto.md en la rama de Sancho y, si no hay ya
+// una PR abierta desde esa rama, una PR nueva hacia la rama principal. Nunca la fusiona.
+async function publishProfilePr(repo:any,auth:string,content:string):Promise<string|null>{
+  const form=new FormData();
+  form.append('message','Sancho: ficha del proyecto');form.append('branch',PROFILE_BRANCH);form.append(PROFILE_PATH,content.trim()+'\n');
+  const commit=await fetch(bbRepoUrl(repo)+'/src',{method:'POST',headers:{Authorization:auth},body:form,signal:AbortSignal.timeout(30000)});
+  if(!commit.ok)throw new Error('bitbucket_profile_commit_'+commit.status);
+  const q=encodeURIComponent(`source.branch.name="${PROFILE_BRANCH}" AND state="OPEN"`);
+  const open=await fetch(bbRepoUrl(repo)+'/pullrequests?q='+q,{headers:{Authorization:auth},signal:AbortSignal.timeout(20000)});
+  const existing=open.ok?((await open.json()) as any).values?.[0]:null;
+  if(existing)return existing.links?.html?.href||null;
+  const {branch}=await mainHead(repo,auth);
+  const created=await fetch(bbRepoUrl(repo)+'/pullrequests',{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json'},signal:AbortSignal.timeout(20000),body:JSON.stringify({
+    title:'Sancho: ficha del proyecto',close_source_branch:true,source:{branch:{name:PROFILE_BRANCH}},destination:{branch:{name:branch}},
+    description:'Sancho ha estudiado el repositorio y ha escrito esta ficha en `'+PROFILE_PATH+'`. La lee antes de cada revisión para entender cómo funciona el proyecto.\n\nRevísala y corrige lo que no sea cierto: puedes editarla aquí o en el panel de Sancho. Al fusionarla, el equipo podrá mantenerla junto al código; si la cambiáis en el repositorio, Sancho usará vuestra versión.'})});
+  if(!created.ok)throw new Error('bitbucket_profile_pr_'+created.status);
+  return ((await created.json()) as any).links?.html?.href||null;
+}
+async function saveProfile(repo:any,auth:string|null,content:string,data:{source:'agent'|'edited';commit?:string|null;summary?:string|null;userId?:string|null}){
+  const row=(await pool.query('INSERT INTO project_profiles(repository_id,commit_sha,content,summary,source,created_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',[repo.id,data.commit||null,content,data.summary||null,data.source,data.userId||null])).rows[0];
+  let prUrl:string|null=null,prError:string|null=null;
+  if(auth&&await setting('profile_publish_pr')!==false){try{prUrl=await publishProfilePr(repo,auth,content)}catch(e){prError=e instanceof Error?e.message:'pr_failed';console.error('profile_pr_failed',repo.id,prError)}}
+  if(prUrl)await pool.query('UPDATE project_profiles SET pr_url=$1 WHERE id=$2',[prUrl,row.id]);
+  return {id:row.id,prUrl,prError};
+}
+async function generateProfile(repo:any,reason:string){
+  const conn=await setting('bitbucket_connection');if(!conn)throw new Error('bitbucket_not_configured');
+  if(!CEREBRO_URL)throw new Error('cerebro_not_configured');
+  const auth=bbAuth(conn),head=await mainHead(repo,auth),overrides=await activePrompts();
+  const instructions=(overrides.ficha?.trim()?overrides.ficha:defaultPrompt('ficha')).trim();
+  const input=['Repositorio: '+repo.workspace+'/'+repo.slug,'Rama principal: '+head.branch+' @ '+head.hash,'Motivo: '+reason,'','Estudia el repositorio y escribe su ficha.'].join('\n');
+  const schema={type:'object',additionalProperties:false,properties:{ficha:{type:'string'},resumen:{type:'string'}},required:['ficha','resumen']};
+  const r=await callAgent(null,'sancho_profile',{mode:'profile',checkout:{workspace:repo.workspace,slug:repo.slug,commit:head.hash,email:conn.email,token:decrypt(conn.secret)},model:String(await setting('agent_model')||'claude-opus-5-5'),instructions,input,schema,maxTurns:120,timeoutMs:1200000});
+  const content=redactSecretsFromText(String(r.output.ficha||'')).text.slice(0,40000).trim();
+  if(content.length<200)throw new Error('profile_too_short');
+  return saveProfile(repo,auth,content,{source:'agent',commit:head.hash,summary:String(r.output.resumen||'').slice(0,500)});
+}
+// Ficha que usa una revisión. Si .sancho/proyecto.md de la rama de destino no coincide con ninguna
+// versión conocida, es una edición del equipo en el repositorio: se importa y manda.
+async function profileForReview(repo:any,auth:string,destCommit:string){
+  const file=await fetchRepoFile(repo,auth,destCommit,PROFILE_PATH,40000);
+  if(file?.text.trim()){
+    const known=(await pool.query('SELECT content FROM project_profiles WHERE repository_id=$1',[repo.id])).rows.some(r=>contentHash(r.content)===contentHash(file.text));
+    if(!known)await pool.query("INSERT INTO project_profiles(repository_id,commit_sha,content,summary,source) VALUES($1,$2,$3,'Importada de '||$4::text||' en el repositorio','edited')",[repo.id,destCommit,file.text.trim(),PROFILE_PATH]);
+  }
+  return activeProfile(repo.id);
+}
+async function profileJob(job:any){
+  try{
+    const repo=(await pool.query('SELECT * FROM repositories WHERE id=$1',[job.payload.repo_id])).rows[0];if(!repo){await pool.query("UPDATE jobs SET status='cancelled' WHERE id=$1",[job.id]);return}
+    await generateProfile(repo,String(job.payload.reason||'actualización'));
+    await pool.query("UPDATE jobs SET status='completed' WHERE id=$1",[job.id]);
+  }catch(e){const code=e instanceof Error?e.message:'profile_failed';if(job.attempts<2&&/network|_5\d\d|_429/.test(code)){await pool.query("UPDATE jobs SET status='queued',locked_at=NULL,run_after=now()+interval '5 minutes' WHERE id=$1",[job.id]);return}await pool.query("UPDATE jobs SET status='failed' WHERE id=$1",[job.id]);console.error('profile_failed',job.payload.repo_id,code)}
+}
+
 async function runReview(job:any){
   const {run_id,repo_id,number,publish}=job.payload;
   try{
@@ -258,7 +365,19 @@ async function runReview(job:any){
       const r=await fetch(endpoint+'/diff',{headers:{Authorization:auth},signal:AbortSignal.timeout(30000)});if(!r.ok)throw new Error('bitbucket_'+r.status);const rawDiff=await r.text();rawTruncated=Buffer.byteLength(rawDiff,'utf8')>350000;diff=rawDiff.slice(0,350000);source='bitbucket';
       const confirm=await fetch(endpoint,{headers:{Authorization:auth},signal:AbortSignal.timeout(20000)});if(!confirm.ok)throw new Error('bitbucket_'+confirm.status);const after:any=await confirm.json();if(after.source?.commit?.hash!==pr.run_source_sha||after.destination?.commit?.hash!==pr.run_destination_sha){await pool.query("UPDATE review_runs SET status='superseded',publication_status='stale',error_code='snapshot_changed',finished_at=now() WHERE id=$1",[run_id]);await pool.query("UPDATE jobs SET status='completed' WHERE id=$1",[job.id]);return}
     }
-    const filtered=filterReviewDiff(diff,{...(repo.config||{}),exclusions:[...(await setting('review_exclusions')||[]),...(repo.config?.exclusions||[])]},60,65000);diff=filtered.diff;
+    // Configuración del propio repositorio (.sancho.yml de la rama de destino) y ficha del proyecto.
+    // La primera revisión de un repositorio con el agente genera la ficha antes de revisar.
+    let repoCfg:{config:RepoConfig|null;error:string|null}={config:null,error:null},profile:any=null;const profileNotes:string[]=[];
+    if(source==='bitbucket'){
+      const auth=bbAuth(await setting('bitbucket_connection'));
+      repoCfg=parseRepoConfig((await fetchRepoFile(repo,auth,pr.run_destination_sha,'.sancho.yml',20000))?.text??null);
+      profile=await profileForReview(repo,auth,pr.run_destination_sha);
+      if(!profile&&CEREBRO_URL&&await reviewEngine()==='agent'){
+        try{await generateProfile(repo,'primera revisión del repositorio');profile=await activeProfile(repo.id)}
+        catch(e){console.error('profile_failed',repo.id,e instanceof Error?e.message:'unknown');profileNotes.push('No se pudo generar la ficha del proyecto; esta revisión se ha hecho sin ella.')}
+      }else if(profile?.source==='agent'&&Date.now()-new Date(profile.created_at).getTime()>PROFILE_MAX_AGE_DAYS*86400000)await enqueueProfile(repo.id,`la ficha tiene más de ${PROFILE_MAX_AGE_DAYS} días`);
+    }
+    const filtered=filterReviewDiff(diff,{...(repo.config||{}),exclusions:[...(await setting('review_exclusions')||[]),...(repo.config?.exclusions||[]),...(repoCfg.config?.excluir||[])]},60,65000);diff=filtered.diff;
     // Motor: el agente (cerebro) lee el repositorio por su cuenta; con OpenAI, Sancho reúne el contexto.
     const engine=source==='bitbucket'?await reviewEngine():'openai',agentMode=engine==='agent';
     const conn=source==='bitbucket'?await setting('bitbucket_connection'):null;
@@ -266,7 +385,7 @@ async function runReview(job:any){
     if(source==='bitbucket'&&!agentMode){const auth='Basic '+Buffer.from(conn.email+':'+decrypt(conn.secret)).toString('base64');context=await gatherContext(filtered.diff,(path,max)=>fetchRepoFile(repo,auth,pr.run_source_sha,path,max))}
     // Datos para el modelo: van en `input`, separados de las instrucciones y marcados como no confiables.
     const dataBlocks=['<pull_request>','Título: '+pr.title,'Repositorio: '+repo.workspace+'/'+repo.slug,'</pull_request>','','<diff>',annotateDiff(diff),'</diff>',...(agentMode?[]:['','<contexto>',context.text||'(sin ficheros de contexto)','</contexto>'])].join('\n');
-    const rules={global:await setting('review_rules'),projectContext:repo.config?.context,repository:repo.config?.rules};
+    const rules={global:await setting('review_rules'),projectContext:repo.config?.context,repository:repo.config?.rules,profile:profile?.content,repoFileContext:repoCfg.config?.contexto,repoFileRules:rulesForFiles(repoCfg.config,changedFiles(diff))};
     const overrides=await activePrompts();
     const detectionInstructions=buildInstructions('deteccion',rules,agentMode,overrides),verificationInstructions=buildInstructions('verificacion',rules,agentMode,overrides);
     const openai=agentMode?null:await getSecret('openai_secret'),model=agentMode?String(await setting('agent_model')||'claude-opus-5-5'):await setting('model');let candidates:any[]=[],confirmed:any[]=[],summary='Análisis completado sin hallazgos confirmados.';
@@ -301,7 +420,12 @@ async function runReview(job:any){
       if(source==='simulator')confirmed=[{candidate_id:'sim-auth-1',path:'src/Example.php',start_line:1,severity:'high',category:'authorization',title:'La consulta no verifica la propiedad del registro',scenario:'Un usuario autenticado puede cambiar el identificador solicitado y recibir un registro ajeno.',impact:'Exposición de datos de otra persona.',evidence:'find($id) recupera el registro sin política de acceso visible en el diff.',recommendation:'Aplicar la política de autorización antes de devolver el recurso.',short_title:'Registro ajeno accesible por su id',short_impact:'Un usuario autenticado puede leer registros de otras personas cambiando el id.',short_fix:'Aplica la política de autorización antes de devolver el registro.'}];
 
     }
-    const min=String(await setting('min_severity')||'medium'),rank:any={medium:1,high:2,critical:3};let accepted=0;
+    const min=String(repoCfg.config?.gravedad_minima||await setting('min_severity')||'medium'),rank:any={medium:1,high:2,critical:3};let accepted=0;
+    // Qué ficha y qué .sancho.yml se han usado, para el detalle de la revisión.
+    coverage.profile=profile?{source:profile.source,created_at:profile.created_at,commit:profile.commit_sha}:null;
+    coverage.repo_config={found:!!repoCfg.config,error:repoCfg.error};
+    if(repoCfg.error)coverage.limitations.push(repoCfg.error+' Se ha revisado sin él.');
+    coverage.limitations.push(...profileNotes);
     for(const f of confirmed){const file=String(f.path||''),line=Number(f.start_line),safeFile=!!file&&!file.includes('..')&&!/vendor|node_modules|\.env|secret|credential/i.test(file);
       if(!safeFile||!['medium','high','critical'].includes(f.severity)||rank[f.severity]<rank[min]||!f.title||!f.evidence||!Number.isInteger(line)||line<1||(!repo.remote_uuid.startsWith('sim:')&&!addedLineExists(diff,file,line)))continue;
       const fp=findingFingerprint(repo.id,number,{path:file,category:String(f.category||'other'),title:String(f.title)});

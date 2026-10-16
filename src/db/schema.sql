@@ -30,3 +30,7 @@ CREATE INDEX IF NOT EXISTS ai_exchanges_run_idx ON ai_exchanges(run_id, created_
 ALTER TABLE ai_exchanges ADD COLUMN IF NOT EXISTS tools jsonb NOT NULL DEFAULT '[]';
 CREATE TABLE IF NOT EXISTS prompt_versions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL CHECK(name IN ('deteccion','verificacion','agente')), content text, created_by uuid REFERENCES users ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS prompt_versions_name_idx ON prompt_versions(name, created_at DESC);
+ALTER TABLE prompt_versions DROP CONSTRAINT IF EXISTS prompt_versions_name_check;
+ALTER TABLE prompt_versions ADD CONSTRAINT prompt_versions_name_check CHECK(name IN ('deteccion','verificacion','agente','ficha'));
+CREATE TABLE IF NOT EXISTS project_profiles (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), repository_id uuid NOT NULL REFERENCES repositories ON DELETE CASCADE, commit_sha text, content text NOT NULL, summary text, source text NOT NULL CHECK(source IN ('agent','edited')), created_by uuid REFERENCES users ON DELETE SET NULL, created_at timestamptz NOT NULL DEFAULT now(), pr_url text);
+CREATE INDEX IF NOT EXISTS project_profiles_repo_idx ON project_profiles(repository_id, created_at DESC);

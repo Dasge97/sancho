@@ -131,6 +131,7 @@ export function normalizePullRequest(pr:any){
     title:String(pr?.title||`PR #${number}`),
     author:String(pr?.author?.display_name||pr?.author||'desconocido'),
     source_sha:pr?.source?.commit?.hash||pr?.source_sha||null,
+    source_branch:String(pr?.source?.branch?.name||''),
     destination_sha:pr?.destination?.commit?.hash||pr?.destination_sha||null,
     state:String(pr?.state||'OPEN'),
     draft:Boolean(pr?.draft),

@@ -54,13 +54,15 @@ export function setTheme(choice: ThemeChoice) {
 
 /* ---- Pantalla actual, en la URL para poder recargar y enlazar ----
    #/ajustes/openai → pantalla y subpestaña. #/revision/<id>/cobertura → pantalla, id y subpestaña. */
-export type ViewName = 'inicio' | 'repositorios' | 'revisiones' | 'revision' | 'consumo' | 'ajustes' | 'equipo' | 'auditoria';
-const views: ViewName[] = ['inicio', 'repositorios', 'revisiones', 'revision', 'consumo', 'ajustes', 'equipo', 'auditoria'];
+export type ViewName = 'inicio' | 'repositorios' | 'repositorio' | 'revisiones' | 'revision' | 'consumo' | 'ajustes' | 'equipo' | 'auditoria';
+const views: ViewName[] = ['inicio', 'repositorios', 'repositorio', 'revisiones', 'revision', 'consumo', 'ajustes', 'equipo', 'auditoria'];
+// Pantallas de un elemento concreto: llevan su id antes de la subpestaña.
+const withId: ViewName[] = ['revision', 'repositorio'];
 
 function parseHash(): {view: ViewName; id: string | null; tab: string | null} {
   const [, name, a, b] = location.hash.split('/');
   if (!views.includes(name as ViewName)) return {view: 'inicio', id: null, tab: null};
-  return name === 'revision' ? {view: 'revision', id: a || null, tab: b || null} : {view: name as ViewName, id: null, tab: a || null};
+  return withId.includes(name as ViewName) ? {view: name as ViewName, id: a || null, tab: b || null} : {view: name as ViewName, id: null, tab: a || null};
 }
 export const route = reactive(parseHash());
 window.addEventListener('hashchange', () => Object.assign(route, parseHash()));

@@ -31,7 +31,12 @@ const tab = computed({get: () => tabs.some(t => t.id === route.tab) ? route.tab!
 watch(tab, t => { crumbTail.value = tabs.find(x => x.id === t)!.label; }, {immediate: true});
 
 const form = reactive({workspace: '', bbEmail: '', bbToken: '', apiKey: '', model: '', inputPrice: null as number | null, outputPrice: null as number | null, budget: null as number | null});
-const autoPublish = ref(false);
+const autoPublish = ref(false), profilePr = ref(true);
+async function toggleProfilePr(value: boolean) {
+  profilePr.value = value;
+  try { await put('/settings', {profile_publish_pr: value}); notify('success', value ? 'Sancho propondrá la ficha como PR' : 'La ficha solo se guardará en Sancho'); }
+  catch (e) { profilePr.value = !value; notify('danger', 'No se pudo guardar', errorMessage(e)); }
+}
 // Motor: el agente de Claude (servicio cerebro) o una llamada directa a OpenAI.
 const engine = reactive({engine: 'agent' as 'agent' | 'openai', agentModel: 'claude-opus-5-5', agent: {configured: false, reachable: false, mode: null as string | null}});
 // Reglas: generales (ajustes) y por repositorio (repositories.config). Las rutas, una por línea.
@@ -54,6 +59,7 @@ const {loading, error, reload} = useLoad(async () => {
   Object.assign(form, {workspace: v.bitbucket_connection?.workspace || '', bbEmail: v.bitbucket_connection?.email || '', model: v.model || '', inputPrice: v.input_price_per_million ?? null, outputPrice: v.output_price_per_million ?? null, budget: v.monthly_budget_usd ?? null});
   Object.assign(status, {bitbucket: !!v.bitbucket_connection?.configured, openai: !!v.openai_secret?.configured});
   autoPublish.value = v.auto_publish === true;
+  profilePr.value = v.profile_publish_pr !== false;
   Object.assign(globalRules, {rules: v.review_rules || '', exclusions: (v.review_exclusions || []).join(NL)});
   const e = await api<{engine: 'agent' | 'openai'; agent: typeof engine.agent; agent_model: string}>('/engine');
   Object.assign(engine, {engine: e.engine, agentModel: e.agent_model, agent: e.agent});
@@ -262,6 +268,7 @@ async function toggleAutoPublish(value: boolean) {
     <UiCard v-else title="Publicación en Bitbucket" description="Decide qué hace Sancho con las revisiones que lanza solo, por el webhook o al repasar las pull requests abiertas.">
       <div class="form">
         <UiSwitch :model-value="autoPublish" label="Comentar automáticamente en Bitbucket" help="Apagado, las revisiones automáticas solo se ven en este panel. Actívalo cuando hayas comprobado que los comentarios aportan. «Revisar y comentar» en Repositorios funciona siempre." @update:model-value="toggleAutoPublish" />
+        <UiSwitch :model-value="profilePr" label="Proponer la ficha del proyecto como PR" help="Cuando Sancho escribe o actualiza la ficha de un repositorio, abre una PR que añade .sancho/proyecto.md para que el equipo la revise y la guarde junto al código. Sancho nunca la fusiona." @update:model-value="toggleProfilePr" />
       </div>
     </UiCard>
   </template>

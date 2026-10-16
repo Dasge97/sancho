@@ -25,6 +25,7 @@
     "bcryptjs": "2.4.3",
     "connect-pg-simple": "10.0.0",
     "cors": "2.8.5",
+    "dompurify": "3.4.17",
     "dotenv": "^16.4.7",
     "express": "4.22.3",
     "express-async-errors": "^3.1.1",
@@ -32,8 +33,10 @@
     "express-session": "1.19.0",
     "helmet": "8.0.0",
     "lucide-vue-next": "1.0.0",
+    "marked": "18.1.1",
     "pg": "8.13.1",
     "vue": "3.5.44",
+    "yaml": "2.9.1",
     "zod": "4.6.7"
   },
   "devDependencies": {

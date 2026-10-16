@@ -2,7 +2,7 @@
 // Repositorios de Bitbucket: todos los miembros los ven; activar, pausar, instalar el webhook y
 // publicar comentarios queda para administración (el servidor lo vuelve a comprobar).
 import {computed, reactive, ref} from 'vue';
-import {FolderGit2, MessageSquare, Pause, Play, RefreshCw, ScanSearch, Webhook} from 'lucide-vue-next';
+import {BookOpen, FolderGit2, MessageSquare, Pause, Play, RefreshCw, ScanSearch, Webhook} from 'lucide-vue-next';
 import {api, errorMessage, patch, post} from '../lib/api';
 import {isAdmin} from '../lib/session';
 import {ask, go, notify, route, setTab} from '../lib/ui-state';
@@ -120,6 +120,7 @@ async function review(repo: Repo, publish: boolean) {
             <UiBadge :tone="repo.active ? 'success' : 'neutral'">{{ repo.active ? 'Activo' : 'Pausado' }}</UiBadge>
             <UiBadge v-if="repo.active && !repo.remote_uuid.startsWith('sim:')" :tone="repo.webhook_id ? 'success' : 'warning'">{{ repo.webhook_id ? 'Revisión automática' : 'Sin webhook' }}</UiBadge>
           </div>
+          <UiButton size="sm" variant="ghost" @click="go('repositorio', repo.id)"><template #icon><BookOpen :size="14" /></template>Ficha y configuración</UiButton>
         </div>
 
         <form v-if="repo.active" class="review-form" novalidate @submit.prevent="review(repo, false)">
