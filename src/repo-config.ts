@@ -9,7 +9,8 @@
 //       reglas: "Todo controlador que cambia datos usa un FormRequest."
 //   excluir:               rutas que no se revisan
 //     - "legacy/**"
-//   gravedad_minima: high  medium, high o critical
+//   gravedad_minima: high  low, medium, high o critical
+//   perfil: exigente       estandar (solo problemas) o exigente (también detalles menores)
 import {parse} from 'yaml';
 import {z} from 'zod';
 
@@ -18,7 +19,8 @@ const Schema = z.object({
   reglas: z.string().max(8000).optional(),
   rutas: z.array(z.object({ruta: z.string().min(1).max(250), reglas: z.string().min(1).max(4000)})).max(50).optional(),
   excluir: z.array(z.string().min(1).max(250)).max(50).optional(),
-  gravedad_minima: z.enum(['medium', 'high', 'critical']).optional(),
+  gravedad_minima: z.enum(['low', 'medium', 'high', 'critical']).optional(),
+  perfil: z.enum(['estandar', 'exigente']).optional(),
 }).strict();
 export type RepoConfig = z.infer<typeof Schema>;
 

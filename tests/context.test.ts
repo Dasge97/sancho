@@ -118,7 +118,7 @@ describe('.sancho.yml in the repository', () => {
   it('parses the config and explains invalid fields in Spanish', () => {
     expect(parseRepoConfig(null)).toEqual({config: null, error: null});
     expect(parseRepoConfig('reglas: "Usa FormRequest."\nexcluir: ["legacy/**"]').config).toEqual({reglas: 'Usa FormRequest.', excluir: ['legacy/**']});
-    expect(parseRepoConfig('gravedad_minima: low').error).toContain('gravedad_minima');
+    expect(parseRepoConfig('gravedad_minima: minima').error).toContain('gravedad_minima');
     expect(parseRepoConfig('desconocido: 1').error).toContain('no válido');
     expect(parseRepoConfig('reglas: [').error).toContain('no es YAML válido');
   });
@@ -138,5 +138,14 @@ describe('.sancho.yml in the repository', () => {
     expect(text).toContain('API de facturas.');
     expect(text).toContain('Regla del yml.');
     expect(text.indexOf('## Ficha del proyecto')).toBeLessThan(text.indexOf('## Reglas y contexto del equipo'));
+  });
+});
+
+describe('strict review profile', () => {
+  it('adds the minor-details instructions to detection and verification, not to conversation', () => {
+    expect(buildInstructions('deteccion')).not.toContain('## Perfil exigente');
+    expect(buildInstructions('deteccion', {strict: true})).toContain('## Perfil exigente');
+    expect(buildInstructions('verificacion', {strict: true})).toContain('acepta `low`');
+    expect(buildInstructions('conversacion', {strict: true})).not.toContain('## Perfil exigente');
   });
 });

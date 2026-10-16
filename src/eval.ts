@@ -107,7 +107,7 @@ async function main() {
           vin = ver.input_tokens; vout = ver.output_tokens;
         }
         // Mismo filtro que antes de publicar: gravedad válida y línea añadida en el diff.
-        const valid = (f: any) => ['medium', 'high', 'critical'].includes(f.severity) && addedLineText(diff, String(f.path), Number(f.start_line)) !== null;
+        const valid = (f: any) => ['medium', 'high', 'critical'].includes(f.severity) /* el banco mide el perfil estándar */ && addedLineText(diff, String(f.path), Number(f.start_line)) !== null;
         const pick = (f: any): Found => ({path: String(f.path), start_line: Number(f.start_line), category: String(f.category), severity: String(f.severity), title: String(f.short_title || f.title).slice(0, 90)});
         const s = score(confirmed.filter(valid).map(pick), expected, candidates.filter(valid).map(pick));
         tokensIn += det.input_tokens + vin; tokensOut += det.output_tokens + vout;

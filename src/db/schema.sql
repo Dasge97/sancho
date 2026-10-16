@@ -35,7 +35,7 @@ ALTER TABLE finding_threads ADD COLUMN IF NOT EXISTS resolved_at timestamptz, AD
 ALTER TABLE publication_operations DROP CONSTRAINT IF EXISTS publication_operations_operation_check;
 ALTER TABLE publication_operations ADD CONSTRAINT publication_operations_operation_check CHECK(operation IN ('summary_create','summary_update','inline_create','resolve','reopen','reply'));
 ALTER TABLE prompt_versions DROP CONSTRAINT IF EXISTS prompt_versions_name_check;
-ALTER TABLE prompt_versions ADD CONSTRAINT prompt_versions_name_check CHECK(name IN ('deteccion','verificacion','agente','ficha','conversacion'));
+ALTER TABLE prompt_versions ADD CONSTRAINT prompt_versions_name_check CHECK(name IN ('deteccion','verificacion','agente','ficha','conversacion','exigente'));
 ALTER TABLE pull_requests ADD COLUMN IF NOT EXISTS paused boolean NOT NULL DEFAULT false;
 ALTER TABLE repositories ADD COLUMN IF NOT EXISTS webhook_version integer NOT NULL DEFAULT 1;
 CREATE TABLE IF NOT EXISTS pr_conversations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), pull_request_id uuid NOT NULL REFERENCES pull_requests ON DELETE CASCADE, thread_id uuid REFERENCES finding_threads ON DELETE SET NULL, comment_id text NOT NULL, author text, message text NOT NULL, kind text NOT NULL, reply text, reply_comment_id text, action text, learned_rule_id uuid, status text NOT NULL DEFAULT 'pending', created_at timestamptz NOT NULL DEFAULT now(), UNIQUE(pull_request_id, comment_id));

@@ -31,7 +31,13 @@ const tab = computed({get: () => tabs.some(t => t.id === route.tab) ? route.tab!
 watch(tab, t => { crumbTail.value = tabs.find(x => x.id === t)!.label; }, {immediate: true});
 
 const form = reactive({workspace: '', bbEmail: '', bbToken: '', apiKey: '', model: '', inputPrice: null as number | null, outputPrice: null as number | null, budget: null as number | null});
-const autoPublish = ref(false), profilePr = ref(true);
+const autoPublish = ref(false), profilePr = ref(true), strictProfile = ref(false);
+// Perfil exigente: además de los problemas, Sancho comenta detalles menores. Un .sancho.yml puede cambiarlo por repositorio.
+async function toggleStrict(value: boolean) {
+  strictProfile.value = value;
+  try { await put('/settings', {review_profile: value ? 'exigente' : 'estandar'}); notify('success', value ? 'Revisión exigente activada' : 'Revisión estándar', value ? 'Sancho comentará también detalles menores, como mucho cinco por PR.' : 'Sancho solo comentará problemas de gravedad media o mayor.'); }
+  catch (e) { strictProfile.value = !value; notify('danger', 'No se pudo guardar', errorMessage(e)); }
+}
 async function toggleProfilePr(value: boolean) {
   profilePr.value = value;
   try { await put('/settings', {profile_publish_pr: value}); notify('success', value ? 'Sancho propondrá la ficha como PR' : 'La ficha solo se guardará en Sancho'); }
@@ -60,6 +66,7 @@ const {loading, error, reload} = useLoad(async () => {
   Object.assign(status, {bitbucket: !!v.bitbucket_connection?.configured, openai: !!v.openai_secret?.configured});
   autoPublish.value = v.auto_publish === true;
   profilePr.value = v.profile_publish_pr !== false;
+  strictProfile.value = v.review_profile === 'exigente';
   Object.assign(globalRules, {rules: v.review_rules || '', exclusions: (v.review_exclusions || []).join(NL)});
   const e = await api<{engine: 'agent' | 'openai'; agent: typeof engine.agent; agent_model: string}>('/engine');
   Object.assign(engine, {engine: e.engine, agentModel: e.agent_model, agent: e.agent});
@@ -229,6 +236,9 @@ async function toggleAutoPublish(value: boolean) {
     </UiCard>
 
     <div v-else-if="tab === 'reglas'" class="stack">
+      <UiCard title="Perfil de revisión" description="Cuánto comenta Sancho. Un repositorio puede elegir otro perfil en su .sancho.yml con «perfil: exigente» o «perfil: estandar».">
+        <UiSwitch :model-value="strictProfile" label="Revisión exigente" help="Además de los problemas, comenta detalles menores que un buen revisor pediría cambiar: errores que se ignoran, código muerto, casos límite. Como mucho cinco por PR. Nunca estilo." @update:model-value="toggleStrict" />
+      </UiCard>
       <UiCard title="Reglas para todos los repositorios" description="Dile a Sancho en qué fijarse y qué ignorar. Sancho las lee antes de cada revisión, junto a sus propias instrucciones.">
         <form class="form" novalidate @submit.prevent="saveGlobalRules">
           <UiField v-slot="f" label="Reglas del equipo" help="Una regla por línea, en lenguaje normal. Ejemplo: «Toda acción que cambia datos usa un FormRequest con authorize()». «No comentes el uso de DB::raw en database/seeders»." optional>

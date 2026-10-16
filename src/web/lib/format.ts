@@ -27,6 +27,7 @@ const severities: Record<string, [string, Tone]> = {
   critical: ['Crítico', 'danger'],
   high: ['Alto', 'danger'],
   medium: ['Medio', 'warning'],
+  low: ['Menor', 'info'],
 };
 export const severity = (s: string): [string, Tone] => severities[s] || [s, 'neutral'];
 

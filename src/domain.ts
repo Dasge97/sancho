@@ -42,7 +42,7 @@ export function sanchoLink(base:string,params:Record<string,string>):string {
 
 // Formato de los comentarios (formato B): gravedad con su color, una tabla con el problema, por qué
 // importa y el arreglo, la sugerencia de código y tres enlaces al panel (detalle y los dos votos).
-const SEVERITY_LABEL:Record<string,[string,string,string]>={critical:['🔴','Crítico','Críticos'],high:['🟠','Alto','Altos'],medium:['🟡','Medio','Medios']};
+const SEVERITY_LABEL:Record<string,[string,string,string]>={critical:['🔴','Crítico','Críticos'],high:['🟠','Alto','Altos'],medium:['🟡','Medio','Medios'],low:['🔵','Menor','Menores']};
 const CATEGORY_LABEL:Record<string,string>={security:'Seguridad',authorization:'Autorización',correctness:'Funcionamiento',data_integrity:'Integridad de datos',performance:'Rendimiento',compatibility:'Compatibilidad',other:'Otro'};
 // Una celda de tabla en una línea y sin barras verticales sueltas.
 const cell=(t:string)=>String(t||'').replace(/\|/g,'\\|').replace(/\s+/g,' ').trim();
@@ -79,7 +79,9 @@ export function renderSummary(input:{findings:PublishedFinding[];limit?:number;f
   const aboutBlock=about?`\n\n${about}`:'';
   // Contador por gravedad, y cuántos comentarios anteriores se han arreglado ya en la PR.
   const n=(sev:string)=>all.filter(x=>x.severity===sev).length;
-  const counter=total||resolved?`\n\n| 🔴 Críticos | 🟠 Altos | 🟡 Medios | ✅ Resueltos |\n| :---: | :---: | :---: | :---: |\n| ${[n('critical'),n('high'),n('medium'),resolved].map(x=>x?`**${x}**`:'0').join(' | ')} |`:'';
+  // La columna de detalles menores solo sale con el perfil exigente, cuando los hay.
+  const cols:[string,number][]=[['🔴 Críticos',n('critical')],['🟠 Altos',n('high')],['🟡 Medios',n('medium')],...(n('low')?[['🔵 Menores',n('low')] as [string,number]]:[]),['✅ Resueltos',resolved]];
+  const counter=total||resolved?`\n\n| ${cols.map(c=>c[0]).join(' | ')} |\n| ${cols.map(()=>':---:').join(' | ')} |\n| ${cols.map(c=>c[1]?`**${c[1]}**`:'0').join(' | ')} |`:'';
   if(!total)return `### Sancho · sin problemas encontrados${counter}${aboutBlock}${partial}\n\n${footer}`;
   const list=findings.map((f,i)=>`${i+1}. ${(SEVERITY_LABEL[f.severity]||SEVERITY_LABEL.medium)[0]} **${shortFinding(f).title}** · ${code((f.path.split('/').pop()||f.path)+(f.start_line?':'+f.start_line:''))}`).join('\n');
   const more=hiddenCount?`\n\nY ${hiddenCount} más en el panel.`:'';

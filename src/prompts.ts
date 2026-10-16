@@ -5,7 +5,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 
-export const PROMPT_NAMES = ['deteccion', 'verificacion', 'agente', 'ficha', 'conversacion'] as const;
+export const PROMPT_NAMES = ['deteccion', 'verificacion', 'agente', 'ficha', 'conversacion', 'exigente'] as const;
 export type PromptName = typeof PROMPT_NAMES[number];
 export type PromptOverrides = Partial<Record<PromptName, string | null>>;
 
@@ -26,12 +26,15 @@ export interface TeamRules {
   repoFileContext?: string | null; repoFileRules?: string | null;
   /** Lo que Sancho ha aprendido de las respuestas del equipo y de los falsos positivos marcados. */
   learned?: string[];
+  /** Perfil exigente: también detalles menores (severity low). */
+  strict?: boolean;
 }
 
 /** Instrucciones completas: la plantilla, la parte del agente si revisa el motor, y al final las reglas del equipo. */
 export function buildInstructions(kind: 'deteccion' | 'verificacion' | 'conversacion', rules: TeamRules = {}, agent = false, overrides: PromptOverrides = {}): string {
   const parts = [template(kind, overrides).trim()];
   if (agent) parts.push(template('agente', overrides).trim());
+  if (rules.strict && kind !== 'conversacion') parts.push(template('exigente', overrides).trim());
   if (rules.profile?.trim()) parts.push('## Ficha del proyecto\n\nLa escribiste tú al estudiar el repositorio y la ha podido corregir el equipo. Úsala para orientarte, pero comprueba en el código lo que afirmes en un hallazgo.\n\n' + rules.profile.trim());
   const extra: string[] = [];
   if (rules.projectContext?.trim()) extra.push('### De qué va este proyecto\n\n' + rules.projectContext.trim());

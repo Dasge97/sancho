@@ -138,3 +138,14 @@ describe('code suggestions',()=>{
     expect(raw).toContain('| **Arreglo** | R |\n\n```suggestion\n    return 1;\n```\n\n**[🔍 Ver detalle]');
   });
 });
+
+describe('review profiles',()=>{
+  it('labels minor details and adds their column to the counter only when there are some',()=>{
+    const low={severity:'low',category:'correctness',title:'T',path:'app/A.php',start_line:3,impact:'I',recommendation:'R'};
+    expect(renderInlineComment(low,'https://s.test/?review=1').startsWith('| 🔵 **Menor** | Funcionamiento · `A.php:3` |')).toBe(true);
+    const summary=renderSummary({findings:[low],filesReviewed:1,commit:'abcdef1',partial:null,reviewUrl:'https://s.test/'});
+    expect(summary).toContain('| 🔴 Críticos | 🟠 Altos | 🟡 Medios | 🔵 Menores | ✅ Resueltos |');
+    expect(summary).toContain('| 0 | 0 | 0 | **1** | 0 |');
+    expect(renderSummary({findings:[{...low,severity:'high'}],filesReviewed:1,commit:'abcdef1',partial:null,reviewUrl:'https://s.test/'})).not.toContain('Menores');
+  });
+});
