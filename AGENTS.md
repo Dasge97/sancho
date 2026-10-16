@@ -10,7 +10,7 @@ Sancho es un revisor de PR de Bitbucket Cloud. Este repositorio contiene una apl
 6. Todos los miembros ven todos los repositorios conectados. Los permisos de configuración se validan en servidor.
 7. No ejecutar código de los proyectos revisados ni modificarlo en V1. No aprobar, bloquear ni fusionar PR.
 8. Priorizar evidencia, cobertura explícita, deduplicación y prevención de resultados obsoletos.
-9. No guardar secretos, datos privados de clientes ni respuestas completas del proveedor en fixtures o logs.
+9. No guardar secretos, datos privados de clientes ni respuestas completas del proveedor en fixtures o logs. Única excepción, decidida por el usuario (D20): la tabla `ai_exchanges`, con lo enviado al modelo y su respuesta por revisión, secretos ocultados, sin pantalla en el panel y borrada a los 30 días.
 10. Desarrollar con simuladores cuando falte configuración externa; concretar credenciales e identidad antes de conectar servicios reales.
 11. Validar cada entrega con pruebas relevantes. Distinguir pruebas del servicio, integración real y evaluación del modelo.
 12. Mantener el humor en la presentación del producto; los comentarios de revisión deben ser claros y profesionales.

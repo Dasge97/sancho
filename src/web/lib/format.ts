@@ -44,6 +44,7 @@ const auditActions: Record<string, string> = {
   'openai.secret.rotated': 'Cambió la clave de OpenAI',
   'bitbucket.connection.saved': 'Guardó la conexión con Bitbucket',
   'repository.webhook.configured': 'Instaló el webhook de un repositorio',
+  'repository.rules.updated': 'Cambió las reglas de revisión de un repositorio',
 };
 export const auditAction = (a: string) => auditActions[a] || a;
 

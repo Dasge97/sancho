@@ -22,6 +22,8 @@
 | D16 | Futuro deseado: ordenar una corrección desde un comentario de la PR. |
 | D17 | Stack confirmado: Node.js + TypeScript + Vue + PostgreSQL. |
 | D18 | Nombre del producto: Sancho. Repositorio de desarrollo: Dasge97/sancho en GitHub; integración de revisión: Bitbucket Cloud. |
+| D19 | Las instrucciones del modelo viven en `prompts/` y administración añade reglas generales y por repositorio desde Ajustes → Reglas de revisión (16-10-2026). |
+| D20 | Se guarda en el servidor lo que se envía al modelo y su respuesta en cada revisión, para poder auditarla. Sin pantalla en el panel: solo por consola (`dist-server/ai-log.js`). Se borra a los 30 días (`AI_EXCHANGE_RETENTION_DAYS`) y lleva los secretos ya ocultados. Cambia la regla 9 de AGENTS.md (16-10-2026). |
 
 ## Propuestas de diseño, todavía no confirmadas expresamente
 

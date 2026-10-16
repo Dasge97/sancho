@@ -12,5 +12,6 @@ RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/dist-server ./dist-server
 COPY --from=build /app/src/db/schema.sql ./dist-server/db/schema.sql
+COPY prompts ./prompts
 EXPOSE 3000
 CMD ["node","dist-server/server.js"]

@@ -28,7 +28,7 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
       if(openaiFails)return json({error:{message:'bad request'}},400);
       const body=JSON.parse(init.body);
       if(body.text.format.name==='sancho_detection')return openaiResponse({summary:'Un hallazgo.',candidates:[{candidate_id:'x',path:'src/Controller.php',start_line:2,severity:'high',category:'authorization',title:'Falta comprobar la propiedad del registro',scenario:'Un usuario cambia el id.',impact:'Lee datos ajenos.',evidence:'find($id) sin política.',recommendation:'Aplicar la política.',short_title:'Factura ajena accesible por id',short_impact:'Un usuario lee facturas de otros cambiando el id.',short_fix:'Llama a `authorize` antes de devolverla.'}]});
-      return openaiResponse({results:[{candidate_id:'candidate-0',disposition:'supported',reason:'Visible en el diff.'}]});
+      return openaiResponse({results:[{candidate_id:'candidate-0',disposition:'supported',severity:'critical',reason:'Visible en el diff.'}]});
     }
     const prMatch=url.match(/\/pullrequests\/(\d+)(\/.*)?$/);
     if(prMatch){
@@ -62,7 +62,7 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     const address=server.address();base=`http://127.0.0.1:${typeof address==='object'&&address?address.port:0}`;
     await pool.query('TRUNCATE users,sessions,settings,repositories,webhook_events,jobs,usage_calls,audit_events CASCADE');
     const enc=mod.encrypt;
-    await pool.query("INSERT INTO settings(key,value) VALUES('bitbucket_connection',$1),('openai_secret',$2),('model',$3)",[JSON.stringify({workspace:'ws',email:'bot@example.org',secret:enc('bitbucket-token')}),JSON.stringify(enc('sk-test-key-not-real-000000')),JSON.stringify('test-model')]);
+    await pool.query("INSERT INTO settings(key,value) VALUES('bitbucket_connection',$1),('openai_secret',$2),('model',$3),('review_rules',$4)",[JSON.stringify({workspace:'ws',email:'bot@example.org',secret:enc('bitbucket-token')}),JSON.stringify(enc('sk-test-key-not-real-000000')),JSON.stringify('test-model'),JSON.stringify('No comentes los seeders.')]);
     repoId=(await pool.query("INSERT INTO repositories(remote_uuid,workspace,slug,name,active,webhook_secret) VALUES('{repo-uuid}','ws','repo','repo',true,$1) RETURNING id",[JSON.stringify(enc(WEBHOOK_SECRET))])).rows[0].id;
   });
   afterAll(async()=>{vi.unstubAllGlobals();await new Promise(resolve=>server?.close(resolve));await pool?.end()});
@@ -88,6 +88,16 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     expect(run).toEqual({status:'completed',publication_status:'not_requested'});
     expect(Number((await pool.query('SELECT count(*) FROM findings')).rows[0].count)).toBe(1);
     expect(Number((await pool.query("SELECT count(*) FROM usage_calls WHERE status='succeeded'")).rows[0].count)).toBe(2);
+    // Lo que llega a OpenAI: instrucciones versionadas con las reglas del equipo, y los datos aparte, con líneas numeradas.
+    const detection=calls.find(c=>c.body?.text?.format?.name==='sancho_detection')!;
+    expect(detection.body.instructions).toContain('Eres Sancho');
+    expect(detection.body.instructions).toContain('No comentes los seeders.');
+    expect(detection.body.input).toContain('+L2| return $this->json($repo->find($id));');
+    expect(detection.body.input).toContain('=== Fichero: src/Controller.php · cambiado en la PR ===');
+    expect(detection.body.input).not.toContain('Eres Sancho');
+    // La gravedad que publica es la de la verificación, y el intercambio queda registrado.
+    expect((await pool.query('SELECT severity FROM findings')).rows[0].severity).toBe('critical');
+    expect((await pool.query('SELECT kind FROM ai_exchanges ORDER BY created_at')).rows.map((r:any)=>r.kind)).toEqual(['sancho_detection','sancho_verification']);
     expect(calls.filter(c=>c.method!=='GET'&&c.url.includes('bitbucket'))).toEqual([]);
   });
 

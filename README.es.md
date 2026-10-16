@@ -41,7 +41,8 @@ Sancho informa y comenta. **La decisión de fusionar sigue siendo de tu equipo**
 ## Qué hace
 
 - **Revisa solo cada pull request** en cuanto se abre o recibe cambios, gracias a un webhook por repositorio. Los borradores se omiten.
-- **Lee antes de opinar**: el diff a commits fijos y los ficheros que cambian, con los secretos ocultados antes de enviar nada a la IA.
+- **Lee antes de opinar**: el diff a commits fijos, los ficheros que cambian y el código que usan (modelos, políticas, rutas y reglas de acceso), con los secretos ocultados antes de enviar nada a la IA.
+- **Sigue las reglas de tu equipo**: desde Ajustes → Reglas de revisión le cuentas de qué va cada proyecto, en qué fijarse y qué ignorar.
 - **Se revisa a sí mismo**: una segunda llamada al modelo descarta lo que no puede justificar, y el servidor comprueba que cada problema está en una línea añadida.
 - **Comenta con tres frases**: qué pasa, por qué importa y cómo se arregla, en la línea exacta. Un resumen por pull request, que se actualiza en lugar de repetirse.
 - **No repite comentarios** entre versiones de la misma pull request y no publica resultados de un código que ya ha cambiado.
@@ -114,6 +115,7 @@ Abre `http://localhost:3000` y entra.
 | `CADDY_DOMAIN` | Dominio para el certificado HTTPS de Caddy (perfil `production`). |
 | `SANCHO_PORT` | Puerto local del panel (por defecto `3000`, solo en `127.0.0.1`). |
 | `OPENAI_MAX_OUTPUT_TOKENS` | Límite de salida por llamada a OpenAI (por defecto `16000`; incluye el razonamiento). |
+| `AI_EXCHANGE_RETENTION_DAYS` | Días que se guarda lo enviado a OpenAI y su respuesta (por defecto `30`; `0` para no guardarlo). Se consulta con `docker compose exec api node dist-server/ai-log.js [id-de-revisión]`. |
 
 **Permisos del API token de Atlassian** (créalo en id.atlassian.com con «Create API token with scopes» y la aplicación Bitbucket): `read:repository:bitbucket`, `read:pullrequest:bitbucket`, `write:pullrequest:bitbucket`, `read:webhook:bitbucket` y `write:webhook:bitbucket`. La cuenta tiene que ser administradora de los repositorios para instalar el webhook. Los comentarios salen con el nombre de esa cuenta, así que conviene una cuenta solo para Sancho.
 
@@ -134,6 +136,8 @@ flowchart LR
 ```
 
 El API recibe los webhooks, comprueba su firma y deja un trabajo en una cola de PostgreSQL. El worker lee el diff, pide a la IA los posibles problemas, le pide después que los verifique y comprueba él mismo que cada uno está en una línea añadida. Antes de publicar, confirma que la pull request no ha cambiado de commit. El código y los comentarios de los repositorios se tratan como datos, nunca como instrucciones, y Sancho no ejecuta nunca el código que revisa.
+
+**Cómo revisa la IA.** Las instrucciones del modelo están en [`prompts/deteccion.md`](prompts/deteccion.md) y [`prompts/verificacion.md`](prompts/verificacion.md): qué buscar en Laravel y Symfony, qué no comentar, cómo medir la gravedad y cómo escribir cada hallazgo. Se envían separadas del código, al que se añade el número de cada línea, y al final llevan las reglas que escribe tu equipo en el panel.
 
 El detalle está en [docs/](docs/): [arquitectura](docs/03-arquitectura.md), [motor de revisión](docs/04-revision.md), [datos y contratos](docs/05-contratos.md) y [validación y operación](docs/07-validacion-operacion.md).
 

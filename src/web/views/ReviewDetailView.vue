@@ -123,12 +123,19 @@ async function vote(findingId: string, value: 'useful' | 'false_positive') {
       <UiCard v-else-if="tab === 'cobertura'" title="Qué se ha revisado" description="Lo que Sancho ha leído, lo que ha dejado fuera y por qué.">
           <dl class="kv">
             <div><dt>Ficheros revisados</dt><dd class="tabular">{{ int(coverage.files_considered ?? 0) }}</dd></div>
-            <div><dt>Ficheros leídos completos para contexto</dt><dd class="tabular">{{ int(coverage.context_files ?? 0) }}</dd></div>
+            <div><dt>Ficheros leídos como contexto</dt><dd class="tabular">{{ int(coverage.context_files ?? 0) }}</dd></div>
             <div><dt>Ficheros excluidos</dt><dd class="tabular">{{ int(coverage.excluded_files?.length ?? 0) }}</dd></div>
             <div><dt>Líneas con secretos ocultadas a la IA</dt><dd class="tabular">{{ int(coverage.redacted_lines ?? 0) }}</dd></div>
             <div><dt>Problemas propuestos / confirmados</dt><dd class="tabular">{{ int(coverage.findings_received ?? 0) }} / {{ int(coverage.findings_accepted ?? 0) }}</dd></div>
             <div><dt>Se ejecutó código del proyecto</dt><dd>No, nunca</dd></div>
+            <div v-if="coverage.prompt_version"><dt>Versión de las instrucciones y reglas</dt><dd><code>{{ coverage.prompt_version }}</code></dd></div>
           </dl>
+          <details v-if="coverage.context_list?.length" class="more" open>
+            <summary>Ver qué ficheros se leyeron como contexto</summary>
+            <ul class="files">
+              <li v-for="file in coverage.context_list" :key="file.path"><code>{{ file.path }}</code> <span class="muted">· {{ file.reason }}{{ file.truncated ? ' · recortado' : '' }}</span></li>
+            </ul>
+          </details>
           <details v-if="coverage.excluded_files?.length" class="more">
             <summary>Ver ficheros excluidos</summary>
             <ul class="files"><li v-for="file in coverage.excluded_files" :key="file"><code>{{ file }}</code></li></ul>
@@ -186,7 +193,7 @@ async function vote(findingId: string, value: 'useful' | 'false_positive') {
 .kv div:last-child { border-bottom: 0; }
 .kv dt { color: var(--color-text-muted); }
 .kv dd { margin: 0; font-weight: 600; text-align: right; }
-.files { margin: var(--space-2) 0 0; padding-left: var(--space-4); }
+.files { margin: var(--space-2) 0 0; padding-left: var(--space-4); display: flex; flex-direction: column; gap: var(--space-1); overflow-wrap: anywhere; }
 tfoot td { padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-border-strong); }
 tfoot td:first-child { padding-left: var(--space-6); }
 tfoot td:last-child { padding-right: var(--space-6); }

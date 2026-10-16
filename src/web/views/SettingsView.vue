@@ -2,7 +2,7 @@
 // Ajustes (solo administración): una subpestaña por área (Bitbucket, OpenAI, modelo y costes,
 // publicación). Cada área guarda lo suyo; la publicación automática se guarda al cambiar el interruptor.
 import {computed, reactive, ref, watch} from 'vue';
-import {Bot, CircleDollarSign, GitBranch, MessageSquare} from 'lucide-vue-next';
+import {Bot, CircleDollarSign, GitBranch, ListChecks, MessageSquare} from 'lucide-vue-next';
 import {api, errorMessage, post, put} from '../lib/api';
 import {crumbTail, notify, route, setTab} from '../lib/ui-state';
 import {useLoad} from '../lib/use-load';
@@ -20,6 +20,7 @@ const tabs = [
   {id: 'bitbucket', label: 'Bitbucket', icon: GitBranch},
   {id: 'openai', label: 'OpenAI', icon: Bot},
   {id: 'modelo', label: 'Modelo y costes', icon: CircleDollarSign},
+  {id: 'reglas', label: 'Reglas de revisión', icon: ListChecks},
   {id: 'publicacion', label: 'Publicación', icon: MessageSquare},
 ];
 const tab = computed({get: () => tabs.some(t => t.id === route.tab) ? route.tab! : 'bitbucket', set: setTab});
@@ -28,6 +29,17 @@ watch(tab, t => { crumbTail.value = tabs.find(x => x.id === t)!.label; }, {immed
 
 const form = reactive({workspace: '', bbEmail: '', bbToken: '', apiKey: '', model: '', inputPrice: null as number | null, outputPrice: null as number | null, budget: null as number | null});
 const autoPublish = ref(false);
+// Reglas: generales (ajustes) y por repositorio (repositories.config). Las rutas, una por línea.
+interface Repo { id: string; name: string; workspace: string; slug: string; config: {context?: string; rules?: string; exclusions?: string[]} }
+const repos = ref<Repo[]>([]);
+const globalRules = reactive({rules: '', exclusions: ''});
+const repoRules = reactive({id: '', context: '', rules: '', exclusions: ''});
+const NL = String.fromCharCode(10);
+const lines = (text: string) => text.split(NL).map(l => l.trim()).filter(Boolean);
+function pickRepo(id: string) {
+  const r = repos.value.find(x => x.id === id);
+  Object.assign(repoRules, {id, context: r?.config?.context || '', rules: r?.config?.rules || '', exclusions: (r?.config?.exclusions || []).join(NL)});
+}
 const status = reactive({bitbucket: false, openai: false});
 const busy = ref(''), errors = reactive<Record<string, string>>({});
 
@@ -37,6 +49,9 @@ const {loading, error, reload} = useLoad(async () => {
   Object.assign(form, {workspace: v.bitbucket_connection?.workspace || '', bbEmail: v.bitbucket_connection?.email || '', model: v.model || '', inputPrice: v.input_price_per_million ?? null, outputPrice: v.output_price_per_million ?? null, budget: v.monthly_budget_usd ?? null});
   Object.assign(status, {bitbucket: !!v.bitbucket_connection?.configured, openai: !!v.openai_secret?.configured});
   autoPublish.value = v.auto_publish === true;
+  Object.assign(globalRules, {rules: v.review_rules || '', exclusions: (v.review_exclusions || []).join(NL)});
+  repos.value = await api<Repo[]>('/repositories');
+  if (repos.value.length) pickRepo(repoRules.id || repos.value[0].id);
   return true;
 });
 defineExpose({reload});
@@ -86,6 +101,16 @@ const saveModel = () => {
     notify('success', 'Modelo y costes guardados');
   });
 };
+
+const saveGlobalRules = () => run('rules-global', async () => {
+  await put('/settings', {review_rules: globalRules.rules, review_exclusions: lines(globalRules.exclusions)});
+  notify('success', 'Reglas guardadas', 'Se aplicarán desde la próxima revisión de cualquier repositorio.');
+});
+const saveRepoRules = () => run('rules-repo', async () => {
+  const saved = await put<{config: Repo['config']}>(`/repositories/${repoRules.id}/rules`, {context: repoRules.context, rules: repoRules.rules, exclusions: lines(repoRules.exclusions)});
+  const r = repos.value.find(x => x.id === repoRules.id); if (r) r.config = saved.config;
+  notify('success', `Reglas de ${r?.name || 'el repositorio'} guardadas`, 'Se aplicarán desde su próxima revisión.');
+});
 
 async function toggleAutoPublish(value: boolean) {
   autoPublish.value = value;
@@ -161,6 +186,41 @@ async function toggleAutoPublish(value: boolean) {
       </form>
     </UiCard>
 
+    <div v-else-if="tab === 'reglas'" class="stack">
+      <UiCard title="Reglas para todos los repositorios" description="Dile a Sancho en qué fijarse y qué ignorar. Sancho las lee antes de cada revisión, junto a sus propias instrucciones.">
+        <form class="form" novalidate @submit.prevent="saveGlobalRules">
+          <UiField v-slot="f" label="Reglas del equipo" help="Una regla por línea, en lenguaje normal. Ejemplo: «Toda acción que cambia datos usa un FormRequest con authorize()». «No comentes el uso de DB::raw en database/seeders»." optional>
+            <textarea :id="f.id" v-model="globalRules.rules" class="control" rows="6" maxlength="8000" :aria-describedby="f.describedby" />
+          </UiField>
+          <UiField v-slot="f" label="Rutas que nunca se revisan" help="Una por línea. Admite * y carpetas terminadas en /**, por ejemplo legacy/** o *.min.js." optional>
+            <textarea :id="f.id" v-model="globalRules.exclusions" class="control mono" rows="4" :aria-describedby="f.describedby" />
+          </UiField>
+          <div class="row-actions"><UiButton type="submit" variant="primary" :loading="busy === 'rules-global'">Guardar reglas generales</UiButton></div>
+        </form>
+      </UiCard>
+
+      <UiCard title="Reglas de un repositorio" description="Cuéntale a Sancho de qué va cada proyecto y qué es importante en él. Se suman a las reglas generales.">
+        <UiNotice v-if="!repos.length" tone="info">Sincroniza tus repositorios en Repositorios para poder darles reglas propias.</UiNotice>
+        <form v-else class="form" novalidate @submit.prevent="saveRepoRules">
+          <UiField v-slot="f" label="Repositorio">
+            <select :id="f.id" :value="repoRules.id" class="control" @change="pickRepo(($event.target as HTMLSelectElement).value)">
+              <option v-for="r in repos" :key="r.id" :value="r.id">{{ r.name }} · {{ r.workspace }}/{{ r.slug }}</option>
+            </select>
+          </UiField>
+          <UiField v-slot="f" label="De qué va el proyecto" help="Qué hace, para quién, versión de PHP y del framework, y cómo se organiza. Ejemplo: «API de facturación en Laravel 11 para clientes B2B; cada factura pertenece a un usuario»." optional>
+            <textarea :id="f.id" v-model="repoRules.context" class="control" rows="4" maxlength="4000" :aria-describedby="f.describedby" />
+          </UiField>
+          <UiField v-slot="f" label="Reglas de este repositorio" help="Lo que solo vale aquí. Ejemplo: «Los administradores pueden ver todas las facturas: no es un fallo de autorización»." optional>
+            <textarea :id="f.id" v-model="repoRules.rules" class="control" rows="5" maxlength="8000" :aria-describedby="f.describedby" />
+          </UiField>
+          <UiField v-slot="f" label="Rutas que no se revisan en este repositorio" help="Una por línea." optional>
+            <textarea :id="f.id" v-model="repoRules.exclusions" class="control mono" rows="3" :aria-describedby="f.describedby" />
+          </UiField>
+          <div class="row-actions"><UiButton type="submit" variant="primary" :loading="busy === 'rules-repo'">Guardar reglas del repositorio</UiButton></div>
+        </form>
+      </UiCard>
+    </div>
+
     <UiCard v-else title="Publicación en Bitbucket" description="Decide qué hace Sancho con las revisiones que lanza solo, por el webhook o al repasar las pull requests abiertas.">
       <div class="form">
         <UiSwitch :model-value="autoPublish" label="Comentar automáticamente en Bitbucket" help="Apagado, las revisiones automáticas solo se ven en este panel. Actívalo cuando hayas comprobado que los comentarios aportan. «Revisar y comentar» en Repositorios funciona siempre." @update:model-value="toggleAutoPublish" />
@@ -170,7 +230,8 @@ async function toggleAutoPublish(value: boolean) {
 </template>
 
 <style scoped>
-.form { display: flex; flex-direction: column; gap: var(--space-4); max-width: 640px; }
+.form { display: flex; flex-direction: column; gap: var(--space-4); max-width: 760px; }
+.mono { font-family: var(--font-mono); font-size: var(--text-sm); }
 .fields { display: grid; gap: var(--space-4); grid-template-columns: minmax(0, 1fr); max-width: 760px; }
 .gap { margin-top: var(--space-4); max-width: 760px; }
 .gap-lg { margin-top: var(--space-6); }

@@ -43,7 +43,8 @@ Sancho reports and comments. **Merging is still your team's call**: it never app
 ## What it does
 
 - **Reviews every pull request on its own** as soon as it is opened or updated, through one webhook per repository. Drafts are skipped.
-- **Reads before it speaks**: the diff at fixed commits and the changed files, with secrets masked before anything is sent to the AI.
+- **Reads before it speaks**: the diff at fixed commits, the changed files and the code they use (models, policies, routes and access rules), with secrets masked before anything is sent to the AI.
+- **Follows your team's rules**: under Ajustes → Reglas de revisión you tell it what each project is about, what to watch and what to ignore.
 - **Double-checks itself**: a second model call drops what it cannot justify, and the server checks that each problem sits on an added line.
 - **Comments in three sentences**: what is wrong, why it matters and how to fix it, on the exact line. One summary per pull request, updated instead of repeated.
 - **Does not repeat itself** across versions of the same pull request and never publishes results for code that has since changed.
@@ -116,6 +117,7 @@ Open `http://localhost:3000` and sign in.
 | `CADDY_DOMAIN` | Domain for Caddy's HTTPS certificate (`production` profile). |
 | `SANCHO_PORT` | Local dashboard port (default `3000`, bound to `127.0.0.1` only). |
 | `OPENAI_MAX_OUTPUT_TOKENS` | Output limit per OpenAI call (default `16000`; includes reasoning). |
+| `AI_EXCHANGE_RETENTION_DAYS` | Days to keep what was sent to OpenAI and its answer (default `30`; `0` to not keep it). Read it with `docker compose exec api node dist-server/ai-log.js [review-id]`. |
 
 **Atlassian API token scopes** (create it at id.atlassian.com with "Create API token with scopes" and the Bitbucket app): `read:repository:bitbucket`, `read:pullrequest:bitbucket`, `write:pullrequest:bitbucket`, `read:webhook:bitbucket` and `write:webhook:bitbucket`. The account must be an admin of the repositories to install the webhook. Comments are posted under that account's name, so a dedicated account for Sancho is a good idea.
 
@@ -136,6 +138,8 @@ flowchart LR
 ```
 
 The API receives the webhooks, checks their signature and puts a job in a PostgreSQL queue. The worker reads the diff, asks the AI for possible problems, asks it again to verify them and checks by itself that each one is on an added line. Before publishing, it confirms the pull request has not moved to a new commit. Repository code and comments are treated as data, never as instructions, and Sancho never runs the code it reviews.
+
+**How the AI reviews.** The model's instructions live in [`prompts/deteccion.md`](prompts/deteccion.md) and [`prompts/verificacion.md`](prompts/verificacion.md) (Spanish): what to look for in Laravel and Symfony, what not to comment on, how to rate severity and how to write each finding. They are sent apart from the code, which gets a number on every line, and end with the rules your team writes in the dashboard.
 
 More in [docs/](docs/) (Spanish): [architecture](docs/03-arquitectura.md), [review engine](docs/04-revision.md), [data and contracts](docs/05-contratos.md) and [validation and operations](docs/07-validacion-operacion.md).
 

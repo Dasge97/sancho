@@ -17,6 +17,7 @@
 .control:focus-visible { outline: none; border-color: var(--color-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-focus) 25%, transparent); }
 .control[aria-invalid="true"] { border-color: var(--state-danger-dot); }
 .control:disabled { opacity: 0.6; cursor: not-allowed; }
+textarea.control { height: auto; min-height: 120px; padding: var(--space-3); line-height: 1.5; resize: vertical; }
 select.control {
   appearance: none;
   padding-right: var(--space-8);

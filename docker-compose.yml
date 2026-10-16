@@ -41,6 +41,7 @@ services:
       WORKER_ONLY: "true"
       RUN_WORKER: "true"
       OPENAI_MAX_OUTPUT_TOKENS: ${OPENAI_MAX_OUTPUT_TOKENS:-16000}
+      AI_EXCHANGE_RETENTION_DAYS: ${AI_EXCHANGE_RETENTION_DAYS:-30}
     depends_on:
       db: {condition: service_healthy}
   caddy:

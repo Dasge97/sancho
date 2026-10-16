@@ -96,3 +96,13 @@ Panel rehecho según la skill global `diseno-web`, con los colores de la guía d
 2. Confirmar modelo OpenAI, salida estructurada y tarifas; ejecutar compatibilidad y revisar el coste observado.
 3. Evaluar un conjunto acordado de PR con etiquetas, primero en modo sin publicar.
 4. Programar copias periódicas con `scripts/backup.sh`, definir retención y validar la operación en el entorno de destino.
+
+## Instrucciones, reglas y contexto de la IA (16-10-2026)
+
+- Instrucciones del modelo en `prompts/deteccion.md` y `prompts/verificacion.md`: qué buscar en Laravel y Symfony, qué no comentar, criterios de gravedad y formato de cada hallazgo. Se envían en `instructions`, separadas de los datos (`input`).
+- Diff con el número de línea del fichero nuevo en cada línea, para que el modelo no lo calcule.
+- Reglas del equipo en Ajustes → Reglas de revisión: generales (texto y rutas excluidas) y por repositorio (de qué va el proyecto, reglas propias y rutas excluidas). Se añaden al final de las instrucciones.
+- Contexto ampliado (`src/context.ts`): hasta 8 ficheros cambiados y 8 relacionados (clases usadas según el autoload de composer.json, políticas de Laravel, rutas y reglas de acceso de Symfony).
+- La verificación también corrige la gravedad; se publica la suya.
+- Registro de lo enviado y la respuesta en `ai_exchanges` (D20), sin pantalla: `node dist-server/ai-log.js [id]`. Se borra a los 30 días.
+- 25 pruebas pasan (8 nuevas de contexto e instrucciones; la de integración comprueba lo que llega a OpenAI).

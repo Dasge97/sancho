@@ -32,6 +32,14 @@ Topes iniciales propuestos y editables: 60 archivos modificados, 250 KB por arch
 
 ## 3. Detección
 
+**Implementación (16-10-2026).** Las instrucciones del modelo están en `prompts/deteccion.md` y `prompts/verificacion.md`, versionadas con el código. Se envían en el campo `instructions` de la API de OpenAI; el diff y el contexto van en `input`, dentro de las etiquetas `<pull_request>`, `<diff>` y `<contexto>`, como datos no confiables. Cada línea del diff lleva su número en el fichero nuevo (`+L28|` añadida, ` L27|` sin cambios) para que el modelo no tenga que calcularlo.
+
+Al final de las instrucciones se añaden, si existen, las reglas de Ajustes → Reglas de revisión: de qué va el proyecto, reglas generales y reglas del repositorio. La huella de las instrucciones completas se guarda en la cobertura de cada revisión (`prompt_version`).
+
+Contexto que recibe el modelo (`src/context.ts`): hasta 8 ficheros cambiados (16 KB cada uno) y hasta 8 relacionados (12 KB cada uno), con un máximo de 60 000 caracteres. Los relacionados son las clases importadas con `use` y resueltas con el autoload PSR-4 de `composer.json`, la política de Laravel de cada modelo usado y, si cambia un controlador, los ficheros de rutas y `config/packages/security.yaml`. Todo pasa por el ocultado de secretos. Si se recorta algo, la revisión queda como parcial.
+
+La verificación devuelve, además de la decisión, la gravedad que considera correcta; se publica esa. Lo enviado y la respuesta de cada llamada se guardan en `ai_exchanges` (D20) y se consultan con `node dist-server/ai-log.js [id-de-revisión]`.
+
 Prioridades: errores introducidos o agravados por la PR, controles de autorización, separación de clientes/usuarios, validación, SQL inseguro, transacciones, migraciones, compatibilidad con versiones presentes y regresiones demostrables.
 
 No informar fallos antiguos sin conexión con la PR, preferencias personales, falta de tests genérica ni problemas que requieren suposiciones no sustentadas.
