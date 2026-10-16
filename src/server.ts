@@ -698,7 +698,13 @@ async function publishRun(job:any){
     let existingId=row.summary_comment_id;
     if(!existingId){const hit=remoteComments.find((x:any)=>{const text=String(x.content?.raw||'');return text.includes('sancho-summary='+runId)||text.includes('<!-- sancho-summary:'+runId+' -->')});if(hit)existingId=String(hit.id)}
     const limitations:string[]=row.coverage?.limitations||[];
-    const content=renderSummary({findings,walkthrough:row.walkthrough,changes:row.changes||[],filesReviewed:Number(row.coverage?.files_considered||0),commit:row.source_sha,partial:limitations.length?limitations.join(' '):null,reviewUrl:sanchoLink(linkBase,{review:runId,'sancho-summary':runId})});
+    // El resumen cuenta también los problemas de revisiones anteriores cuyo comentario sigue abierto:
+    // si un commit arregla uno y deja otro, el resumen no puede decir «sin problemas».
+    const seen=new Set(findings.map((f:any)=>f.fingerprint));
+    const stillOpen=(await pool.query("SELECT f.fingerprint,f.severity,f.title,f.path,f.start_line,f.impact,f.recommendation,f.short_title,f.short_impact,f.short_fix FROM finding_threads t JOIN findings f ON f.run_id=t.latest_run_id AND f.fingerprint=t.fingerprint WHERE t.pull_request_id=$1 AND t.status='open' AND t.remote_comment_id IS NOT NULL",[row.pull_request_id])).rows.filter((f:any)=>!seen.has(f.fingerprint));
+    const rankOf=(s:string)=>s==='critical'?3:s==='high'?2:1;
+    const summaryFindings=[...findings,...stillOpen].sort((a:any,b:any)=>rankOf(b.severity)-rankOf(a.severity));
+    const content=renderSummary({findings:summaryFindings,walkthrough:row.walkthrough,changes:row.changes||[],filesReviewed:Number(row.coverage?.files_considered||0),commit:row.source_sha,partial:limitations.length?limitations.join(' '):null,reviewUrl:sanchoLink(linkBase,{review:runId,'sancho-summary':runId})});
     const check=await fetch(base,{headers:{Authorization:auth},signal:AbortSignal.timeout(20000)});if(!check.ok)throw new Error('bitbucket_'+check.status);const latest:any=await check.json();
     if(!row.active||latest.state!=='OPEN'||latest.draft||latest.source?.commit?.hash!==row.source_sha||latest.destination?.commit?.hash!==row.destination_sha){await pool.query("UPDATE review_runs SET status='superseded',publication_status='stale' WHERE id=$1",[runId]);await pool.query("UPDATE publication_operations SET status='stale',updated_at=now() WHERE run_id=$1",[runId]);await pool.query("UPDATE jobs SET status='completed' WHERE id=$1",[job.id]);return}
     const response=await fetch(existingId?commentsUrl+'/'+encodeURIComponent(existingId):commentsUrl,{method:existingId?'PUT':'POST',headers:{Authorization:auth,'Content-Type':'application/json'},body:JSON.stringify({content:{raw:content}}),signal:AbortSignal.timeout(20000)});

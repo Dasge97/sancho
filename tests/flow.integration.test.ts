@@ -267,6 +267,18 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     expect((await pool.query("SELECT t.status FROM finding_threads t JOIN pull_requests p ON p.id=t.pull_request_id WHERE p.number=42")).rows[0].status).toBe('resolved');
   });
 
+  it('keeps counting in the summary a problem that is still open after a new commit',async()=>{
+    remote[49]=pr(49,'src-49a');
+    await sendWebhook('pullrequest:created',{pullrequest:remote[49]});await drainQueue();
+    detectionOverride={summary:'Sin cambios relevantes.',walkthrough:'Ajusta un texto.',changes:[],candidates:[],follow_up:[{id:'abierto-1',status:'still_present',reason:'Sigue sin autorizar.'}]};
+    calls.length=0;remote[49]=pr(49,'src-49b');
+    await sendWebhook('pullrequest:updated',{pullrequest:remote[49]});await drainQueue();
+    detectionOverride=null;
+    const summary=calls.filter(c=>c.url.includes('/pullrequests/49/comments')&&['POST','PUT'].includes(c.method)&&c.body?.content?.raw?.includes('sancho-summary=')).at(-1)!;
+    expect(summary.body.content.raw).toContain('**Sancho · 1 problema**');
+    expect(summary.body.content.raw).not.toContain('sin problemas encontrados');
+  });
+
   it('answers a reply in the thread of a finding, withdraws it and learns the reason',async()=>{
     const thread=(await pool.query("SELECT t.id,t.remote_comment_id FROM finding_threads t JOIN pull_requests p ON p.id=t.pull_request_id WHERE p.number=44 AND t.status='open'")).rows[0];
     expect(thread.remote_comment_id).toBeTruthy();
