@@ -115,6 +115,9 @@ Abre `http://localhost:3000` y entra.
 | `CADDY_DOMAIN` | Dominio para el certificado HTTPS de Caddy (perfil `production`). |
 | `SANCHO_PORT` | Puerto local del panel (por defecto `3000`, solo en `127.0.0.1`). |
 | `OPENAI_MAX_OUTPUT_TOKENS` | Límite de salida por llamada a OpenAI (por defecto `16000`; incluye el razonamiento). |
+| `CEREBRO_TOKEN` | Token interno entre el worker y el motor de agente. Cualquier valor aleatorio largo. |
+| `CLAUDE_DIR` | Carpeta con la sesión de Claude Code del servidor; el motor de agente la usa para trabajar por suscripción. |
+| `ANTHROPIC_API_KEY` | Opcional. Con ella, el agente usa una clave de Anthropic (facturación por consumo) en vez de la suscripción. |
 | `AI_EXCHANGE_RETENTION_DAYS` | Días que se guarda lo enviado a OpenAI y su respuesta (por defecto `30`; `0` para no guardarlo). Se consulta con `docker compose exec api node dist-server/ai-log.js [id-de-revisión]`. |
 
 **Permisos del API token de Atlassian** (créalo en id.atlassian.com con «Create API token with scopes» y la aplicación Bitbucket): `read:repository:bitbucket`, `read:pullrequest:bitbucket`, `write:pullrequest:bitbucket`, `read:webhook:bitbucket` y `write:webhook:bitbucket`. La cuenta tiene que ser administradora de los repositorios para instalar el webhook. Los comentarios salen con el nombre de esa cuenta, así que conviene una cuenta solo para Sancho.
@@ -132,10 +135,12 @@ flowchart LR
     API --> DB[("PostgreSQL<br>cola de trabajos")]
     Worker["Worker de revisión"] <--> DB
     Worker <-->|diff y comentarios| BB
-    Worker <-->|detección y verificación| IA["OpenAI"]
+    Worker -->|tarea| Cerebro["Cerebro · agente Claude"]
+    Cerebro -->|copia del commit| BB
+    Worker -.->|alternativa| IA["OpenAI"]
 ```
 
-El API recibe los webhooks, comprueba su firma y deja un trabajo en una cola de PostgreSQL. El worker lee el diff, pide a la IA los posibles problemas, le pide después que los verifique y comprueba él mismo que cada uno está en una línea añadida. Antes de publicar, confirma que la pull request no ha cambiado de commit. El código y los comentarios de los repositorios se tratan como datos, nunca como instrucciones, y Sancho no ejecuta nunca el código que revisa.
+El API recibe los webhooks, comprueba su firma y deja un trabajo en una cola de PostgreSQL. El worker lee el diff y se lo pasa al **cerebro**, un agente del Claude Agent SDK que trabaja sobre una copia del repositorio en el commit de la PR y decide qué leer (rutas, políticas, modelos, quién llama a lo que cambia). Solo puede leer, y solo dentro de esa copia. Un segundo agente verifica cada hallazgo, y el worker comprueba que cada uno está en una línea añadida. Como alternativa, Ajustes → Motor de revisión permite usar OpenAI directamente. Antes de publicar, confirma que la pull request no ha cambiado de commit. El código y los comentarios de los repositorios se tratan como datos, nunca como instrucciones, y Sancho no ejecuta nunca el código que revisa.
 
 **Cómo revisa la IA.** Las instrucciones del modelo están en [`prompts/deteccion.md`](prompts/deteccion.md) y [`prompts/verificacion.md`](prompts/verificacion.md): qué buscar en Laravel y Symfony, qué no comentar, cómo medir la gravedad y cómo escribir cada hallazgo. Se envían separadas del código, al que se añade el número de cada línea, y al final llevan las reglas que escribe tu equipo en el panel.
 

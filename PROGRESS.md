@@ -106,3 +106,12 @@ Panel rehecho según la skill global `diseno-web`, con los colores de la guía d
 - La verificación también corrige la gravedad; se publica la suya.
 - Registro de lo enviado y la respuesta en `ai_exchanges` (D20), sin pantalla: `node dist-server/ai-log.js [id]`. Se borra a los 30 días.
 - 25 pruebas pasan (8 nuevas de contexto e instrucciones; la de integración comprueba lo que llega a OpenAI).
+
+## Motor de agente: cerebro (16-10-2026)
+
+- Servicio interno `cerebro` (`src/cerebro.ts`) con el Claude Agent SDK 0.3.301: copia el repositorio en el commit de la PR (git con el usuario `x-bitbucket-api-token-auth`, hash completo resuelto por la API, sin `.git` ni enlaces simbólicos) y ejecuta el agente con `Read`, `Grep` y `Glob`, modo `dontAsk`, sin ajustes de usuario y con un hook que rechaza cualquier ruta fuera de la copia. El entorno del agente no lleva claves de Sancho ni de Bitbucket.
+- Por defecto, suscripción de Claude del servidor (`/home/codehive/.claude`, la misma que podcaster); con `ANTHROPIC_API_KEY`, clave de API. Coste registrado a 0 por suscripción.
+- Ajustes → Motor de revisión: agente de Claude (por defecto) u OpenAI. Modelo del agente: `claude-opus-5-5`.
+- 26 pruebas pasan; la nueva comprueba lo que recibe el cerebro (copia, instrucciones del agente, diff sin contexto fijo) y lo que se registra.
+- Desplegado. Comprobado en el servidor: el cerebro responde, clona y descarga el commit de `sancho-pruebas`.
+- **Bloqueado:** la sesión de Claude de codehive está caducada (sin token de renovación). Falta volver a iniciar sesión para la prueba real y la prueba de seguridad (leer fuera de la copia).
