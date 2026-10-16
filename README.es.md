@@ -67,16 +67,37 @@ Y un resumen por pull request, que se actualiza con cada cambio en lugar de repe
 >
 > 3 ficheros revisados · commit `a41c09e` · [Ver revisión completa](#)
 
+Si el arreglo cabe en la línea, lo propone tal cual, como cambio sugerido:
+
+> ```suggestion
+> $invoice = Invoice::findOrFail($id);
+> $this->authorize('view', $invoice);
+> ```
+
+Y si le respondes, contesta en el mismo hilo:
+
+> **Ana:** Esta ruta solo la usan administradores, no es un problema.
+>
+> **Sancho:** Tienes razón: la ruta lleva el middleware `can:admin`. Retiro el comentario.<br>
+> 📝 Lo tendré en cuenta en este repositorio: _las rutas de admin/ ya exigen can:admin._
+
 ## Qué hace
 
 | | |
 | --- | --- |
 | **Revisa sola cada pull request** | En cuanto se abre o recibe cambios, gracias a un webhook por repositorio. Los borradores se omiten. |
+| **Conoce tu proyecto** | La primera vez estudia el repositorio entero y escribe su ficha: cómo se organiza, cómo se protege y qué vigilar. La lee antes de cada revisión y la propone como PR en `.sancho/proyecto.md` para que el equipo la corrija. |
 | **Lee el código como lo haría una persona** | Un agente de Claude trabaja sobre una copia del repositorio y decide qué abrir: rutas, políticas, modelos y quién llama a lo que cambia. |
+| **Usa herramientas que no ejecutan nada** | gitleaks busca secretos en las líneas añadidas y `php -l` comprueba que los PHP cambiados compilan. |
 | **Se revisa a sí mismo** | Un segundo agente intenta tumbar cada hallazgo antes de publicarlo, y Sancho comprueba que está en una línea añadida. |
-| **No repite comentarios** | Sigue cada problema entre versiones de la pull request y no publica resultados de un código que ya ha cambiado. |
+| **Propone el arreglo** | Cuando el cambio cabe en la línea comentada, lo deja como sugerencia de código. |
+| **Contesta en la PR** | Responde en el hilo de sus comentarios, retira lo que no es un problema y atiende `@sancho revisa`, `pausa`, `reanuda` y `ayuda`. |
+| **Aprende de tu equipo** | Lo que le explicáis en las PR y los falsos positivos marcados con su motivo se convierten en reglas del repositorio. |
+| **Sigue cada problema hasta el final** | Con un commit nuevo se fija en lo que ha cambiado; si un problema ya está arreglado, lo dice en el hilo y lo marca como resuelto. |
 | **Distingue «limpio» de «no revisado»** | Una revisión parcial o fallida se ve como tal, nunca como una revisión sin problemas. |
+| **Se configura desde el repositorio** | Un `.sancho.yml` con contexto, reglas por carpeta, exclusiones y gravedad mínima, leído de la rama de destino. |
 | **Se adapta a tu equipo** | Reglas generales y por repositorio, y las instrucciones de la IA editables desde el panel, con historial de versiones. |
+| **Mide cuánto acierta** | La pantalla Calidad da el acierto por tipo, por repositorio y por versión de las instrucciones. Además, `npm run eval` pasa casos etiquetados. |
 | **Controla el gasto** | Coste por revisión y por día, y un presupuesto mensual que avisa sin frenar el trabajo. |
 | **Un panel para todo el equipo** | Cuentas locales, dos roles, auditoría de cambios, modo claro y oscuro, y adaptado a móvil. |
 
@@ -95,9 +116,11 @@ flowchart LR
 ```
 
 1. **Llega la pull request.** Bitbucket avisa por webhook; Sancho comprueba la firma y la pone en cola.
-2. **El agente la revisa.** El servicio `cerebro` descarga el repositorio en el commit de la pull request y lanza un agente del Claude Agent SDK con las instrucciones de [`prompts/`](prompts/) y las reglas de tu equipo. El agente lee lo que necesita, y **solo puede leer, y solo dentro de esa copia**.
-3. **Otro agente lo verifica.** Cada hallazgo se contrasta con el código; los que no se sostienen se descartan.
-4. **Sancho publica.** Antes de comentar, confirma que la pull request no ha cambiado. Después publica el resumen y los comentarios en línea.
+2. **Sancho lo prepara.** Lee el `.sancho.yml` de la rama de destino, la ficha del proyecto (si no existe, la escribe), lo que ha aprendido del equipo y los comentarios que siguen abiertos. Pasa gitleaks y `php -l`, que no ejecutan el proyecto.
+3. **El agente la revisa.** El servicio `cerebro` descarga el repositorio en el commit de la pull request y lanza un agente del Claude Agent SDK con las instrucciones de [`prompts/`](prompts/) y las reglas de tu equipo. El agente lee lo que necesita, y **solo puede leer, y solo dentro de esa copia**.
+4. **Otro agente lo verifica.** Cada hallazgo se contrasta con el código; los que no se sostienen se descartan.
+5. **Sancho publica.** Antes de comentar, confirma que la pull request no ha cambiado. Después publica el resumen y los comentarios en línea, y cierra los comentarios anteriores que ya están arreglados.
+6. **Sancho atiende las respuestas.** Cuando alguien contesta a un comentario suyo o le escribe `@sancho`, responde en el hilo.
 
 El agente usa la suscripción de Claude del servidor o una clave de Anthropic. Como alternativa, Ajustes → Motor de revisión permite usar OpenAI directamente. El detalle está en [docs/](docs/).
 
@@ -159,7 +182,25 @@ El perfil `production` añade Caddy, que saca el certificado HTTPS solo. Si ya t
 5. Abre una pull request. En unos minutos tendrás la revisión en **Revisiones**.
 6. Cuando los comentarios te convenzan, activa **Ajustes → Publicación** para que Sancho comente solo. Mientras tanto, «Revisar y comentar» publica a mano.
 
-**El API token de Atlassian** se crea en id.atlassian.com con «Create API token with scopes» y la aplicación Bitbucket. Necesita `read:repository`, `read:pullrequest`, `write:pullrequest`, `read:webhook` y `write:webhook`, y la cuenta tiene que administrar los repositorios. Los comentarios salen con su nombre, así que conviene una cuenta solo para Sancho.
+**El API token de Atlassian** se crea en id.atlassian.com con «Create API token with scopes» y la aplicación Bitbucket. Necesita `read:repository`, `read:pullrequest`, `write:pullrequest`, `read:webhook` y `write:webhook`, y la cuenta tiene que administrar los repositorios. Añade `write:repository` si quieres que Sancho proponga la ficha del proyecto como PR; si no, desactiva «Proponer la ficha del proyecto como PR» en Ajustes → Publicación. Los comentarios salen con su nombre, así que conviene una cuenta solo para Sancho.
+
+Si un repositorio sale con «Webhook antiguo», pulsa «Actualizar webhook»: el nuevo avisa también de los comentarios, y sin él Sancho no puede contestar en las PR.
+
+## Hablar con Sancho en la pull request
+
+Responde en el hilo de un comentario suyo para explicarle por qué no es un problema o decirle que ya está arreglado. Sancho contesta en el mismo hilo, retira el comentario si tienes razón y, si es algo que vale para el resto del repositorio, lo apunta como regla.
+
+También puedes escribirle en cualquier comentario de la PR:
+
+| Mensaje | Qué hace |
+| --- | --- |
+| `@sancho revisa` | Revisa la PR otra vez y publica el resultado. |
+| `@sancho pausa` | Deja de revisar sola esta PR. `@sancho revisa` sigue funcionando. |
+| `@sancho reanuda` | Vuelve a revisarla con cada cambio. |
+| `@sancho ayuda` | Contesta con esta lista. |
+| `@sancho` y una pregunta | Contesta sobre la PR o el proyecto. |
+
+Lo que aprende queda en **Repositorios → (repositorio) → Lo aprendido**. Ahí se puede corregir, desactivar o borrar.
 
 ## Configuración
 
@@ -177,9 +218,30 @@ El perfil `production` añade Caddy, que saca el certificado HTTPS solo. Si ya t
 | `SANCHO_PORT` | Puerto local del panel (por defecto `3000`, solo en `127.0.0.1`). |
 | `AI_EXCHANGE_RETENTION_DAYS` | Días que se guarda lo enviado a la IA y su respuesta (por defecto `30`). |
 
+### Desde el repositorio: `.sancho.yml`
+
+El equipo puede configurar a Sancho junto al código con un `.sancho.yml` en la raíz. Sancho lo lee de la rama de destino de cada PR, así que una PR no puede relajar sus propias reglas. Todos los campos son opcionales.
+
+```yaml
+contexto: |
+  API de facturación en Laravel 11 para clientes B2B.
+  Cada factura pertenece a un usuario; los administradores ven todas.
+reglas: |
+  Toda acción que cambia datos usa un FormRequest con authorize().
+rutas:
+  - ruta: "app/Http/Controllers/Admin/**"
+    reglas: "Solo accesible con el middleware can:admin."
+excluir:
+  - "database/seeders/**"
+gravedad_minima: medium   # medium, high o critical
+```
+
+La ficha del proyecto vive en `.sancho/proyecto.md`. Si el equipo la edita en el repositorio, Sancho usa esa versión desde la siguiente revisión.
+
 ## Seguridad
 
 - **El agente solo lee.** No ejecuta el código revisado, no escribe ficheros y no sale a internet; un filtro rechaza cualquier ruta fuera de la copia del repositorio.
+- **Las herramientas tampoco ejecutan nada.** gitleaks lee texto y `php -l` solo compila. El valor de un secreto encontrado no se guarda ni se muestra.
 - **El código revisado es dato, no instrucciones.** Lo que diga un fichero no cambia lo que hace Sancho.
 - **Los secretos no llegan a la IA.** Las líneas con claves o contraseñas se ocultan antes de enviar nada.
 - **Las credenciales se guardan cifradas** (AES-256-GCM) y nunca vuelven al panel.
@@ -193,6 +255,16 @@ npm test                         # pruebas unitarias
 TEST_DATABASE_URL=postgres://… npm test   # y el recorrido completo con Bitbucket y la IA simulados
 docker compose exec api node dist-server/simulator.js   # datos de ejemplo sin conectar nada
 ```
+
+**Medir la calidad con casos etiquetados.** [`evals/casos/`](evals/casos/) tiene seis cambios de un proyecto Laravel: cuatro con un problema conocido y dos limpios. `npm run eval` los pasa por la misma detección y verificación que el worker y da la precisión, la cobertura y el coste. Llama de verdad a OpenAI:
+
+```bash
+OPENAI_API_KEY=… npm run eval -- --modelo gpt-6.1-sol --precios 2,10
+npm run eval -- --modelo gpt-6.1-sol --prompts otra-version/   # compara con otras instrucciones
+docker compose run --rm -e OPENAI_API_KEY worker node dist-server/eval.js --modelo gpt-6.1-sol   # en el servidor
+```
+
+Para añadir casos, edita [`evals/generar.mjs`](evals/generar.mjs) y ejecuta `node evals/generar.mjs evals/casos`.
 
 Para ver qué se envió a la IA en una revisión: `docker compose exec api node dist-server/ai-log.js [id-de-revisión]`.
 Copias de seguridad: `sh scripts/backup.sh` y `sh scripts/restore.sh <fichero.dump>`.

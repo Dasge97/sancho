@@ -120,3 +120,17 @@ Panel rehecho según la skill global `diseno-web`, con los colores de la guía d
 
 - Ajustes → Instrucciones de la IA: editor de detección, verificación y agente, con historial de versiones (autor y fecha), «Restaurar original» y aviso de cambios sin guardar. Tabla `prompt_versions`; endpoints `GET /api/prompts` y `PUT /api/prompts/:nombre` solo para administración, con auditoría.
 - 28 pruebas pasan; la de integración comprueba que la versión editada llega al agente. Probado en el navegador: guardar, cambiar de instrucción, descartar y restaurar.
+
+## Lo que faltaba frente a CodeRabbit (16-10-2026)
+
+Rama `mejoras`. Probado con Bitbucket, OpenAI y el cerebro simulados: **52 pruebas pasan**, la suite completa dos veces seguidas sobre la misma base de datos (comprueba también un reinicio con datos). **Falta probarlo contra Bitbucket real.**
+
+- **Ficha del proyecto** (D23): `prompts/ficha.md`, tabla `project_profiles`, pestaña «Ficha del proyecto» en cada repositorio, con edición, historial y «Volver a estudiar». PR con `.sancho/proyecto.md` (rama `sancho/ficha-del-proyecto`); Sancho no revisa sus propias PR. Requiere `write:repository` en el token.
+- **`.sancho.yml`** (D24): `src/repo-config.ts`; pestaña «Configuración» con el fichero encontrado y un ejemplo.
+- **Resumen de la PR:** qué hace la PR y una tabla con lo que cambia en cada fichero.
+- **Seguimiento:** con un commit nuevo, la revisión recibe los ficheros cambiados desde la anterior y los comentarios abiertos. Los arreglados se contestan en su hilo y se marcan resueltos en Bitbucket.
+- **Conversación y aprendizaje** (D25): evento `pullrequest:comment_created` (webhook versión 2, botón «Actualizar webhook»), `prompts/conversacion.md`, tablas `pr_conversations` y `learned_rules`. Pestañas «Lo aprendido» y «Conversaciones» en cada repositorio. El falso positivo con motivo pide el motivo en el panel y crea una regla.
+- **Sugerencias de código** (D26). **Sin confirmar:** que Bitbucket Cloud permita aplicar el bloque `suggestion` con un clic. Si no, se ve como bloque de código.
+- **Análisis estático** (D27): `src/static-analysis.ts`. Probado con las herramientas reales dentro de la imagen: gitleaks 8.28.0 detecta un token de GitHub sin que su valor aparezca en el informe, y PHP 8.4.26 detecta un error de sintaxis en la línea correcta.
+- **Calidad** (D28): pantalla «Calidad» (`src/quality.ts`, `GET /api/quality`) y `npm run eval` con 6 casos en `evals/casos`. **Sin ejecutar todavía contra el modelo real.**
+- **Arreglado:** la migración volvía a aplicar en cada arranque CHECK antiguos de `publication_operations` y `prompt_versions`. Con una fila `resolve` o una instrucción de conversación guardada, el servidor no habría arrancado.

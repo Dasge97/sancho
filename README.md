@@ -69,16 +69,37 @@ And one summary per pull request, updated on every change instead of repeated:
 >
 > 3 ficheros revisados · commit `a41c09e` · [Ver revisión completa](#)
 
+When the fix fits on the line, it proposes it as a suggested change:
+
+> ```suggestion
+> $invoice = Invoice::findOrFail($id);
+> $this->authorize('view', $invoice);
+> ```
+
+And if you reply, it answers in the same thread:
+
+> **Ana:** Esta ruta solo la usan administradores, no es un problema.
+>
+> **Sancho:** Tienes razón: la ruta lleva el middleware `can:admin`. Retiro el comentario.<br>
+> 📝 Lo tendré en cuenta en este repositorio: _las rutas de admin/ ya exigen can:admin._
+
 ## What it does
 
 | | |
 | --- | --- |
 | **Reviews every pull request on its own** | As soon as it is opened or updated, through one webhook per repository. Drafts are skipped. |
+| **Knows your project** | The first time, it studies the whole repository and writes a profile: how it is organised, how it is protected and what to watch. It reads it before every review and proposes it as a pull request in `.sancho/proyecto.md` so the team can correct it. |
 | **Reads the code like a person would** | A Claude agent works on a checkout of the repository and decides what to open: routes, policies, models and callers of what changed. |
+| **Uses tools that run nothing** | gitleaks looks for secrets in added lines, and `php -l` checks that the changed PHP files compile. |
 | **Double-checks itself** | A second agent tries to knock down every finding before it is published, and Sancho checks that it sits on an added line. |
-| **Does not repeat itself** | It tracks each problem across versions of the pull request and never publishes results for code that has changed. |
+| **Proposes the fix** | When the change fits on the commented line, it leaves it as a code suggestion. |
+| **Answers in the pull request** | It replies in the thread of its comments, withdraws what is not a problem, and handles `@sancho revisa`, `pausa`, `reanuda` and `ayuda`. |
+| **Learns from your team** | What you explain in pull requests, and false positives marked with a reason, become rules for that repository. |
+| **Follows each problem to the end** | On a new commit it focuses on what changed; when a problem is fixed, it says so in the thread and marks it resolved. |
 | **Tells "clean" from "not reviewed"** | A partial or failed review is shown as such, never as a review without problems. |
+| **Configured from the repository** | A `.sancho.yml` with context, per-folder rules, exclusions and a minimum severity, read from the target branch. |
 | **Adapts to your team** | Global and per-repository rules, and the AI instructions editable from the dashboard, with version history. |
+| **Measures how often it is right** | The Calidad (Quality) screen shows the hit rate by type, repository and instructions version. `npm run eval` also runs labelled cases. |
 | **Keeps spending in check** | Cost per review and per day, and a monthly budget that warns without stopping the work. |
 | **One dashboard for the whole team** | Local accounts, two roles, an audit log, light and dark mode, and mobile-ready. |
 
@@ -97,9 +118,11 @@ flowchart LR
 ```
 
 1. **A pull request arrives.** Bitbucket sends a webhook; Sancho checks its signature and queues it.
-2. **The agent reviews it.** The `cerebro` service downloads the repository at the pull request commit and runs a Claude Agent SDK agent with the instructions in [`prompts/`](prompts/) and your team's rules. The agent reads what it needs, and **it can only read, and only inside that checkout**.
-3. **Another agent verifies it.** Every finding is checked against the code; the ones that do not hold up are dropped.
-4. **Sancho publishes.** Before commenting, it confirms the pull request has not changed. Then it posts the summary and the inline comments.
+2. **Sancho gets ready.** It reads `.sancho.yml` from the target branch, the project profile (writing it if there is none), what it has learned from the team and the comments still open. It runs gitleaks and `php -l`, which do not run the project.
+3. **The agent reviews it.** The `cerebro` service downloads the repository at the pull request commit and runs a Claude Agent SDK agent with the instructions in [`prompts/`](prompts/) and your team's rules. The agent reads what it needs, and **it can only read, and only inside that checkout**.
+4. **Another agent verifies it.** Every finding is checked against the code; the ones that do not hold up are dropped.
+5. **Sancho publishes.** Before commenting, it confirms the pull request has not changed. Then it posts the summary and the inline comments, and closes earlier comments that are now fixed.
+6. **Sancho handles replies.** When someone answers one of its comments or writes `@sancho`, it replies in the thread.
 
 The agent uses the server's Claude subscription or an Anthropic key. As an alternative, Ajustes → Motor de revisión can send reviews straight to OpenAI. More in [docs/](docs/) (Spanish).
 
@@ -161,7 +184,25 @@ The `production` profile adds Caddy, which gets the HTTPS certificate by itself.
 5. Open a pull request. Within a few minutes the review shows up under **Revisiones** (Reviews).
 6. Once you trust the comments, turn on **Ajustes → Publicación** (Publishing) so Sancho comments on its own. Until then, «Revisar y comentar» (Review and comment) publishes on demand.
 
-**The Atlassian API token** is created at id.atlassian.com with "Create API token with scopes" and the Bitbucket app. It needs `read:repository`, `read:pullrequest`, `write:pullrequest`, `read:webhook` and `write:webhook`, and the account must administer the repositories. Comments are posted under that account's name, so a dedicated account for Sancho is a good idea.
+**The Atlassian API token** is created at id.atlassian.com with "Create API token with scopes" and the Bitbucket app. It needs `read:repository`, `read:pullrequest`, `write:pullrequest`, `read:webhook` and `write:webhook`, and the account must administer the repositories. Add `write:repository` if you want Sancho to propose the project profile as a pull request; otherwise turn off «Proponer la ficha del proyecto como PR» in Ajustes → Publicación. Comments are posted under that account's name, so a dedicated account for Sancho is a good idea.
+
+If a repository shows «Webhook antiguo» (old webhook), click «Actualizar webhook»: the new one also reports comments, and without it Sancho cannot answer in pull requests.
+
+## Talking to Sancho in a pull request
+
+Reply in the thread of one of its comments to explain why it is not a problem, or to say it is already fixed. Sancho answers in the same thread, withdraws the comment if you are right and, if it applies to the rest of the repository, saves it as a rule.
+
+You can also write to it in any pull request comment (the commands are in Spanish):
+
+| Message | What it does |
+| --- | --- |
+| `@sancho revisa` | Reviews the pull request again and publishes the result. |
+| `@sancho pausa` | Stops reviewing this pull request on its own. `@sancho revisa` still works. |
+| `@sancho reanuda` | Reviews it again on every change. |
+| `@sancho ayuda` | Replies with this list. |
+| `@sancho` and a question | Answers about the pull request or the project. |
+
+What it learns is under **Repositorios → (repository) → Lo aprendido** (What it learned). It can be edited, switched off or deleted there.
 
 ## Configuration
 
@@ -179,9 +220,30 @@ The `production` profile adds Caddy, which gets the HTTPS certificate by itself.
 | `SANCHO_PORT` | Local dashboard port (default `3000`, bound to `127.0.0.1` only). |
 | `AI_EXCHANGE_RETENTION_DAYS` | Days to keep what was sent to the AI and its answer (default `30`). |
 
+### From the repository: `.sancho.yml`
+
+The team can configure Sancho next to the code with a `.sancho.yml` at the root. Sancho reads it from the target branch of each pull request, so a pull request cannot relax its own rules. Every field is optional; the keys are in Spanish.
+
+```yaml
+contexto: |            # what the project is
+  Laravel 11 billing API for B2B customers.
+  Each invoice belongs to one user; admins see all of them.
+reglas: |              # rules for the whole repository
+  Every action that changes data uses a FormRequest with authorize().
+rutas:                 # rules for some paths only
+  - ruta: "app/Http/Controllers/Admin/**"
+    reglas: "Only reachable with the can:admin middleware."
+excluir:               # paths not to review
+  - "database/seeders/**"
+gravedad_minima: medium   # minimum severity: medium, high or critical
+```
+
+The project profile lives in `.sancho/proyecto.md`. If the team edits it in the repository, Sancho uses that version from the next review on.
+
 ## Security
 
 - **The agent only reads.** It never runs the reviewed code, writes files or reaches the internet; a filter rejects any path outside the repository checkout.
+- **The tools do not run anything either.** gitleaks reads text and `php -l` only compiles. The value of a secret it finds is never stored or shown.
 - **Reviewed code is data, not instructions.** Whatever a file says does not change what Sancho does.
 - **Secrets never reach the AI.** Lines with keys or passwords are masked before anything is sent.
 - **Credentials are stored encrypted** (AES-256-GCM) and never sent back to the dashboard.
@@ -195,6 +257,16 @@ npm test                         # unit tests
 TEST_DATABASE_URL=postgres://… npm test   # plus the full flow with Bitbucket and the AI simulated
 docker compose exec api node dist-server/simulator.js   # sample data without connecting anything
 ```
+
+**Measuring quality with labelled cases.** [`evals/casos/`](evals/casos/) holds six changes to a Laravel project: four with a known problem and two clean ones. `npm run eval` runs them through the same detection and verification as the worker and reports precision, recall and cost. It calls OpenAI for real:
+
+```bash
+OPENAI_API_KEY=… npm run eval -- --modelo gpt-6.1-sol --precios 2,10
+npm run eval -- --modelo gpt-6.1-sol --prompts other-version/   # compare with other instructions
+docker compose run --rm -e OPENAI_API_KEY worker node dist-server/eval.js --modelo gpt-6.1-sol   # on the server
+```
+
+To add cases, edit [`evals/generar.mjs`](evals/generar.mjs) and run `node evals/generar.mjs evals/casos`.
 
 To see what was sent to the AI in a review: `docker compose exec api node dist-server/ai-log.js [review-id]`.
 Backups: `sh scripts/backup.sh` and `sh scripts/restore.sh <file.dump>`.
