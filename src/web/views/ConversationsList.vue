@@ -9,6 +9,7 @@ import InlineCode from '../ui/InlineCode.vue';
 import UiBadge from '../ui/UiBadge.vue';
 import UiCard from '../ui/UiCard.vue';
 import UiEmpty from '../ui/UiEmpty.vue';
+import UiMarkdown from '../ui/UiMarkdown.vue';
 import UiNotice from '../ui/UiNotice.vue';
 import UiSkeleton from '../ui/UiSkeleton.vue';
 
@@ -31,7 +32,7 @@ const outcome = (c: any): [string, Tone] | null => c.status === 'failed' ? ['No 
           <UiBadge v-if="outcome(c)" :tone="outcome(c)![1]">{{ outcome(c)![0] }}</UiBadge>
         </div>
         <p class="message"><strong>{{ c.author }}:</strong> <InlineCode :text="c.message" /></p>
-        <p v-if="c.reply" class="reply"><strong>Sancho:</strong> <InlineCode :text="c.reply" /></p>
+        <div v-if="c.reply" class="reply"><strong>Sancho:</strong><UiMarkdown :text="c.reply" /></div>
       </li>
     </ol>
   </UiCard>
@@ -44,7 +45,9 @@ const outcome = (c: any): [string, Tone] | null => c.status === 'failed' ? ['No 
 .head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
 .pr { font-weight: 600; }
 .small { font-size: var(--text-xs); }
-.message, .reply { max-width: 85ch; white-space: pre-line; overflow-wrap: anywhere; font-size: var(--text-sm); }
+.message, .reply { max-width: 85ch; overflow-wrap: anywhere; font-size: var(--text-sm); }
+.message { white-space: pre-line; }
+.reply :deep(p) { margin: var(--space-1) 0 0; }
 .reply { margin-top: var(--space-2); padding-left: var(--space-3); border-left: 3px solid var(--color-active); color: var(--color-text-muted); }
 .reply strong { color: var(--color-text); }
 </style>
