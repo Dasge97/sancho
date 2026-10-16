@@ -1,0 +1,5 @@
+{
+  "titulo": "Detalle de una factura propia",
+  "descripcion": "Filtra por pk y por el usuario de la sesión. No hay nada que comentar.",
+  "esperados": []
+}

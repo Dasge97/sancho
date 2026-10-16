@@ -1,0 +1,14 @@
+diff --git a/src/routes/invoices.js b/src/routes/invoices.js
+index 2bc08b1..64e302b 100644
+--- a/src/routes/invoices.js
++++ b/src/routes/invoices.js
+@@ -10,4 +10,9 @@ router.get('/', async (req, res) => {
+   res.json(rows);
+ });
+ 
++router.get('/search', async (req, res) => {
++  const {rows} = await query(`SELECT id, number, total FROM invoices WHERE user_id = ${req.user.id} AND number LIKE '%${req.query.q}%'`);
++  res.json(rows);
++});
++
+ module.exports = router;

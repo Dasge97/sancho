@@ -1,0 +1,15 @@
+{
+  "titulo": "Detalle de una factura",
+  "descripcion": "Busca la factura solo por id, sin filtrar por el usuario de la sesión.",
+  "esperados": [
+    {
+      "fichero": "src/routes/invoices.js",
+      "texto": "WHERE id = $1', [req.params.id]",
+      "tipo": [
+        "authorization",
+        "security"
+      ],
+      "nota": "Cualquier usuario lee facturas ajenas."
+    }
+  ]
+}

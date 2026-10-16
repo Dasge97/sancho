@@ -1,0 +1,15 @@
+diff --git a/src/routes/invoices.js b/src/routes/invoices.js
+index 2bc08b1..6067fa5 100644
+--- a/src/routes/invoices.js
++++ b/src/routes/invoices.js
+@@ -10,4 +10,10 @@ router.get('/', async (req, res) => {
+   res.json(rows);
+ });
+ 
++router.get('/:id', async (req, res) => {
++  const {rows} = await query('SELECT id, number, total FROM invoices WHERE id = $1', [req.params.id]);
++  if (!rows.length) return res.status(404).end();
++  res.json(rows[0]);
++});
++
+ module.exports = router;

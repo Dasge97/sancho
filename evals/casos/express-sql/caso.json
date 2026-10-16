@@ -1,0 +1,14 @@
+{
+  "titulo": "Buscar facturas por número",
+  "descripcion": "Búsqueda con el término metido en el texto SQL.",
+  "esperados": [
+    {
+      "fichero": "src/routes/invoices.js",
+      "texto": "LIKE '%${req.query.q}%'",
+      "tipo": [
+        "security"
+      ],
+      "nota": "Inyección SQL con el parámetro q."
+    }
+  ]
+}

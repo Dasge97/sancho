@@ -307,17 +307,150 @@ const cases = {
   },
 };
 
+// ---------- Node + Express ----------
+const express = {
+  'package.json': JSON.stringify({name: 'facturas-api', type: 'commonjs', dependencies: {express: '^4.21.0', pg: '^8.13.0'}}, null, 2) + '\n',
+  'src/app.js': `const express = require('express');
+const invoices = require('./routes/invoices');
+
+const app = express();
+app.use(express.json());
+app.use('/invoices', invoices);
+
+module.exports = app;
+`,
+  'src/db.js': `const {Pool} = require('pg');
+
+const pool = new Pool();
+
+// Consulta parametrizada: los valores van aparte, nunca dentro del texto SQL.
+function query(text, params) {
+  return pool.query(text, params);
+}
+
+module.exports = {query};
+`,
+  'src/middleware/auth.js': `const {verifySession} = require('../session');
+
+// Deja en req.user el usuario de la sesión o responde 401.
+async function requireAuth(req, res, next) {
+  const user = await verifySession(req.headers.authorization);
+  if (!user) return res.status(401).json({error: 'Inicia sesión'});
+  req.user = user;
+  next();
+}
+
+module.exports = {requireAuth};
+`,
+  'src/routes/invoices.js': `const express = require('express');
+const {query} = require('../db');
+const {requireAuth} = require('../middleware/auth');
+
+const router = express.Router();
+router.use(requireAuth);
+
+router.get('/', async (req, res) => {
+  const {rows} = await query('SELECT id, number, total FROM invoices WHERE user_id = $1 ORDER BY id DESC', [req.user.id]);
+  res.json(rows);
+});
+
+module.exports = router;
+`,
+};
+const expressList = `router.get('/', async (req, res) => {
+  const {rows} = await query('SELECT id, number, total FROM invoices WHERE user_id = $1 ORDER BY id DESC', [req.user.id]);
+  res.json(rows);
+});
+`;
+const addRoute = route => ({'src/routes/invoices.js': express['src/routes/invoices.js'].replace(expressList, expressList + '\n' + route)});
+
+// ---------- Python + Django ----------
+const django = {
+  'billing/models.py': `from django.conf import settings
+from django.db import models
+
+
+class Invoice(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    number = models.CharField(max_length=20)
+    total = models.DecimalField(max_digits=10, decimal_places=2)
+`,
+  'billing/views.py': `from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
+
+from .models import Invoice
+
+
+@login_required
+def invoice_list(request):
+    invoices = Invoice.objects.filter(user=request.user).values('id', 'number', 'total')
+    return JsonResponse(list(invoices), safe=False)
+`,
+  'billing/urls.py': `from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    path('invoices/', views.invoice_list),
+]
+`,
+};
+const djangoViews = view => ({'billing/views.py': django['billing/views.py'] + '\n\n' + view,
+  'billing/urls.py': django['billing/urls.py'].replace("    path('invoices/', views.invoice_list),\n", "    path('invoices/', views.invoice_list),\n    path('invoices/<int:pk>/', views.invoice_detail),\n")});
+
+const otherCases = {
+  'express-sql': {base: express, caso: {titulo: 'Buscar facturas por número', descripcion: 'Búsqueda con el término metido en el texto SQL.',
+    esperados: [{fichero: 'src/routes/invoices.js', texto: "LIKE '%${req.query.q}%'", tipo: ['security'], nota: 'Inyección SQL con el parámetro q.'}]},
+    cambios: addRoute(`router.get('/search', async (req, res) => {
+  const {rows} = await query(\`SELECT id, number, total FROM invoices WHERE user_id = \${req.user.id} AND number LIKE '%\${req.query.q}%'\`);
+  res.json(rows);
+});
+`)},
+  'express-idor': {base: express, caso: {titulo: 'Detalle de una factura', descripcion: 'Busca la factura solo por id, sin filtrar por el usuario de la sesión.',
+    esperados: [{fichero: 'src/routes/invoices.js', texto: "WHERE id = $1', [req.params.id]", tipo: ['authorization', 'security'], nota: 'Cualquier usuario lee facturas ajenas.'}]},
+    cambios: addRoute(`router.get('/:id', async (req, res) => {
+  const {rows} = await query('SELECT id, number, total FROM invoices WHERE id = $1', [req.params.id]);
+  if (!rows.length) return res.status(404).end();
+  res.json(rows[0]);
+});
+`)},
+  'express-limpio': {base: express, caso: {titulo: 'Detalle de una factura propia', descripcion: 'Filtra por id y por el usuario de la sesión, con parámetros. No hay nada que comentar.', esperados: []},
+    cambios: addRoute(`router.get('/:id', async (req, res) => {
+  const {rows} = await query('SELECT id, number, total FROM invoices WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  if (!rows.length) return res.status(404).end();
+  res.json(rows[0]);
+});
+`)},
+  'django-idor': {base: django, caso: {titulo: 'Detalle de una factura', descripcion: 'La vista exige sesión pero no filtra la factura por su dueño.',
+    esperados: [{fichero: 'billing/views.py', texto: 'get_object_or_404(Invoice, pk=pk)', tipo: ['authorization', 'security'], nota: 'Cualquier usuario lee facturas ajenas.'}]},
+    cambios: djangoViews(`@login_required
+def invoice_detail(request, pk):
+    from django.shortcuts import get_object_or_404
+    invoice = get_object_or_404(Invoice, pk=pk)
+    return JsonResponse({'id': invoice.id, 'number': invoice.number, 'total': str(invoice.total)})
+`)},
+  'django-limpio': {base: django, caso: {titulo: 'Detalle de una factura propia', descripcion: 'Filtra por pk y por el usuario de la sesión. No hay nada que comentar.', esperados: []},
+    cambios: djangoViews(`@login_required
+def invoice_detail(request, pk):
+    from django.shortcuts import get_object_or_404
+    invoice = get_object_or_404(Invoice, pk=pk, user=request.user)
+    return JsonResponse({'id': invoice.id, 'number': invoice.number, 'total': str(invoice.total)})
+`)},
+};
+for (const c of Object.values(cases)) c.base = base;
+Object.assign(cases, otherCases);
+
 const git = (cwd, ...args) => execFileSync('git', args, {cwd, encoding: 'utf8', env: {...process.env, GIT_AUTHOR_NAME: 'eval', GIT_AUTHOR_EMAIL: 'eval@example.org', GIT_COMMITTER_NAME: 'eval', GIT_COMMITTER_EMAIL: 'eval@example.org'}});
 const write = (root, files) => { for (const [f, t] of Object.entries(files)) { fs.mkdirSync(path.dirname(path.join(root, f)), {recursive: true}); fs.writeFileSync(path.join(root, f), t); } };
 
 for (const [name, c] of Object.entries(cases)) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sancho-eval-'));
-  write(tmp, base); git(tmp, 'init', '-q'); git(tmp, 'config', 'core.autocrlf', 'false'); git(tmp, 'add', '.'); git(tmp, 'commit', '-qm', 'base');
+  write(tmp, c.base); git(tmp, 'init', '-q'); git(tmp, 'config', 'core.autocrlf', 'false'); git(tmp, 'add', '.'); git(tmp, 'commit', '-qm', 'base');
   write(tmp, c.cambios);
   const diff = git(tmp, 'diff', '--no-color', '--no-ext-diff');
   const dir = path.join(OUT, name);
   fs.rmSync(dir, {recursive: true, force: true});
-  write(path.join(dir, 'repo'), {...base, ...c.cambios});
+  write(path.join(dir, 'repo'), {...c.base, ...c.cambios});
   fs.writeFileSync(path.join(dir, 'cambio.diff'), diff);
   fs.writeFileSync(path.join(dir, 'caso.json'), JSON.stringify(c.caso, null, 2) + '\n');
   fs.rmSync(tmp, {recursive: true, force: true});

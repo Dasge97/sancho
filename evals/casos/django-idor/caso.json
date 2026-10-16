@@ -1,0 +1,15 @@
+{
+  "titulo": "Detalle de una factura",
+  "descripcion": "La vista exige sesión pero no filtra la factura por su dueño.",
+  "esperados": [
+    {
+      "fichero": "billing/views.py",
+      "texto": "get_object_or_404(Invoice, pk=pk)",
+      "tipo": [
+        "authorization",
+        "security"
+      ],
+      "nota": "Cualquier usuario lee facturas ajenas."
+    }
+  ]
+}

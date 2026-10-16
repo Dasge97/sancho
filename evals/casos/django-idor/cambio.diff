@@ -1,0 +1,25 @@
+diff --git a/billing/urls.py b/billing/urls.py
+index 961e295..d486f86 100644
+--- a/billing/urls.py
++++ b/billing/urls.py
+@@ -4,4 +4,5 @@ from . import views
+ 
+ urlpatterns = [
+     path('invoices/', views.invoice_list),
++    path('invoices/<int:pk>/', views.invoice_detail),
+ ]
+diff --git a/billing/views.py b/billing/views.py
+index f6a3bce..e271c99 100644
+--- a/billing/views.py
++++ b/billing/views.py
+@@ -8,3 +8,10 @@ from .models import Invoice
+ def invoice_list(request):
+     invoices = Invoice.objects.filter(user=request.user).values('id', 'number', 'total')
+     return JsonResponse(list(invoices), safe=False)
++
++
++@login_required
++def invoice_detail(request, pk):
++    from django.shortcuts import get_object_or_404
++    invoice = get_object_or_404(Invoice, pk=pk)
++    return JsonResponse({'id': invoice.id, 'number': invoice.number, 'total': str(invoice.total)})

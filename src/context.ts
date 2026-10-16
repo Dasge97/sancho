@@ -1,7 +1,8 @@
 // Qué código ve el modelo además del diff. Se leen los ficheros que cambia la PR y los que esos
 // ficheros usan: las clases importadas con `use` (resueltas con el autoload PSR-4 de composer.json),
 // las políticas de Laravel de los modelos usados y los ficheros de rutas y seguridad cuando cambia
-// un controlador. Todo sale del commit de la PR y pasa por el ocultado de secretos.
+// un controlador; en JavaScript, TypeScript y Python, los módulos del proyecto que se importan.
+// Todo sale del commit de la PR y pasa por el ocultado de secretos.
 import {redactSecretsFromText} from './domain.js';
 
 export interface ContextFile { path: string; reason: string; truncated: boolean }
@@ -44,7 +45,7 @@ export function changedFiles(diff: string): string[] {
   return files;
 }
 
-export const isReadableSource = (path: string) => /\.(php|twig|ya?ml|xml)$/i.test(path) || /(^|\/)composer\.json$/i.test(path);
+export const isReadableSource = (path: string) => !/\.min\.js$/i.test(path) && (/\.(php|twig|ya?ml|xml|[cm]?[jt]sx?|vue|svelte|py)$/i.test(path) || /(^|\/)(composer|package)\.json$/i.test(path));
 
 export const numberLines = (text: string) => text.split('\n').map((l, i) => `${String(i + 1).padStart(4)}| ${l}`).join('\n');
 
@@ -74,11 +75,79 @@ export function classToPath(fqcn: string, map: [string, string][]): string | nul
   return null;
 }
 
-/** Ficheros relacionados con los cambiados, con el motivo de cada uno, sin repetir ni incluir los cambiados. */
-export function relatedFiles(changed: {path: string; content: string}[], map: [string, string][]): {path: string; reason: string}[] {
-  const out = new Map<string, string>();
+/** Une una carpeta y una ruta relativa sin salir de la raíz del repositorio. null si sale. */
+function joinRepoPath(dir: string, rel: string): string | null {
+  const parts: string[] = dir ? dir.split('/') : [];
+  for (const seg of rel.split('/')) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') { if (!parts.length) return null; parts.pop(); } else parts.push(seg);
+  }
+  return parts.join('/') || null;
+}
+const dirOf = (path: string) => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+
+/** Módulos del propio proyecto que importa un fichero JavaScript o TypeScript (relativos o con el alias `@/`). */
+export function jsImports(source: string): string[] {
+  const specs = [...source.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)['"]([^'"]+)['"]/g)].map(m => m[1]);
+  return [...new Set(specs.filter(s => s.startsWith('.') || s.startsWith('@/') || s.startsWith('~/')))];
+}
+
+/** Ficheros posibles para un import de JavaScript o TypeScript, en orden de preferencia. */
+export function jsCandidates(fromPath: string, spec: string): string[] {
+  const base = spec.startsWith('@/') || spec.startsWith('~/') ? joinRepoPath('src', spec.slice(2)) : joinRepoPath(dirOf(fromPath), spec);
+  if (!base) return [];
+  if (/\.(?:[cm]?[jt]sx?|vue|svelte|json)$/i.test(base)) return [base];
+  return ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.vue', '/index.ts', '/index.tsx', '/index.js'].map(ext => base + ext);
+}
+
+/** Módulos que importa un fichero Python: `from .x import y`, `from app.x import y` o `import app.x`. */
+export function pyImports(source: string): {level: number; module: string; names: string[]}[] {
+  const out: {level: number; module: string; names: string[]}[] = [];
+  // Los nombres van hasta el fin de línea, o entre paréntesis si ocupan varias líneas.
+  for (const m of source.matchAll(/^[ \t]*from[ \t]+(\.*)([\w.]*)[ \t]+import[ \t]+(?:\(([^)]*)\)|([^\n#]+))/gm)) out.push({level: m[1].length, module: m[2], names: (m[3] ?? m[4]).split(',').map(n => n.trim().split(/\s+/)[0]).filter(Boolean)});
+  for (const m of source.matchAll(/^\s*import\s+([\w.]+)/gm)) out.push({level: 0, module: m[1], names: []});
+  return out;
+}
+
+/** Ficheros posibles para un import de Python, dentro del repositorio (en la raíz o en `src/`). */
+export function pyCandidates(fromPath: string, imp: {level: number; module: string; names: string[]}): string[] {
+  const asFile = (p: string | null) => p ? [p + '.py', p + '/__init__.py'] : [];
+  const mod = imp.module.replace(/\./g, '/');
+  if (imp.level > 0) {
+    let dir: string | null = dirOf(fromPath);
+    for (let i = 1; i < imp.level && dir !== null; i++) dir = dir ? dirOf(dir) : null;
+    if (dir === null) return [];
+    // `from . import views`: cada nombre importado puede ser un módulo.
+    if (!mod) return imp.names.flatMap(n => asFile(joinRepoPath(dir!, n)));
+    return asFile(joinRepoPath(dir, mod));
+  }
+  return [...asFile(mod), ...asFile('src/' + mod)];
+}
+
+export interface RelatedFile { path: string; reason: string; candidates?: string[] }
+
+/** Ficheros relacionados con los cambiados, con el motivo de cada uno, sin repetir ni incluir los cambiados.
+ *  Con `candidates`, se lee el primero que exista (un import puede resolverse a varios ficheros). */
+export function relatedFiles(changed: {path: string; content: string}[], map: [string, string][]): RelatedFile[] {
+  const out = new Map<string, RelatedFile>();
   const skip = new Set(changed.map(c => c.path));
-  const add = (path: string | null, reason: string) => { if (path && !skip.has(path) && !out.has(path)) out.set(path, reason); };
+  const add = (path: string | null, reason: string) => { if (path && !skip.has(path) && !out.has(path)) out.set(path, {path, reason}); };
+  const addAny = (candidates: string[], reason: string) => {
+    const list = candidates.filter(p => !skip.has(p));
+    if (list.length && !list.some(p => out.has(p)) && list.length === candidates.length) out.set(list[0], {path: list[0], reason, candidates: list});
+  };
+  for (const file of changed.filter(c => /\.(?:[cm]?[jt]sx?|vue|svelte)$/i.test(c.path))) {
+    for (const spec of jsImports(file.content)) addAny(jsCandidates(file.path, spec), `importado en ${file.path}: ${spec}`);
+  }
+  for (const file of changed.filter(c => c.path.endsWith('.py'))) {
+    for (const imp of pyImports(file.content)) {
+      const cands = pyCandidates(file.path, imp);
+      // Un `from . import a, b` da dos módulos distintos: de dos en dos (fichero o paquete).
+      for (let i = 0; i < cands.length; i += 2) addAny(cands.slice(i, i + 2), `importado en ${file.path}: ${'.'.repeat(imp.level)}${imp.module || imp.names.join(', ')}`);
+    }
+    // Django: la vista se entiende con sus rutas, sus modelos y sus permisos, en la misma carpeta.
+    if (/(^|\/)views(\.py|\/)/.test(file.path)) for (const name of ['urls.py', 'models.py', 'permissions.py']) add(joinRepoPath(dirOf(file.path.replace(/\/views\/.*$/, '/views.py')), name), `${name} de la misma aplicación que ${file.path} (Django)`);
+  }
   for (const file of changed.filter(c => c.path.endsWith('.php'))) {
     for (const fqcn of phpUses(file.content)) {
       add(classToPath(fqcn, map), `clase usada en ${file.path}: ${fqcn}`);
@@ -95,7 +164,7 @@ export function relatedFiles(changed: {path: string; content: string}[], map: [s
     add('config/routes.yaml', 'rutas de la aplicación (Symfony)');
     add('config/packages/security.yaml', 'reglas de acceso (Symfony)');
   }
-  return [...out].map(([path, reason]) => ({path, reason}));
+  return [...out.values()];
 }
 
 /** Reúne el contexto respetando los límites. `fetch` lee un fichero del commit de la PR o devuelve null. */
@@ -125,7 +194,15 @@ export async function gatherContext(diff: string, fetch: FileFetcher, limits = C
   const composer = changed.find(c => c.path === 'composer.json')?.content ?? (await fetch('composer.json', 20_000))?.text ?? null;
   const related = relatedFiles(changed, psr4Map(composer));
   if (related.length > limits.relatedFiles) partial = true;
-  for (const r of related.slice(0, limits.relatedFiles)) await include(r.path, r.reason, limits.relatedBytes);
+  // Un import puede corresponder a varios ficheros (con o sin extensión, paquete o módulo): se lee el
+  // primero que existe. Con un tope de lecturas, para no hacer decenas de llamadas a Bitbucket.
+  let attempts = 0;
+  for (const r of related.slice(0, limits.relatedFiles)) {
+    for (const path of r.candidates || [r.path]) {
+      if (++attempts > 40) { partial = true; break; }
+      if (await include(path, r.reason, limits.relatedBytes) !== null) break;
+    }
+  }
 
   return {text: blocks.join('\n\n'), files, redacted, partial};
 }

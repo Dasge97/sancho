@@ -62,6 +62,37 @@ mucho, señálalas si son un riesgo.
 - Twig: `{{ }}` escapa; el filtro `|raw` no.
 - Formularios sin protección CSRF en acciones que cambian datos.
 
+### JavaScript y TypeScript (Node, Express, NestJS, Next.js, React, Vue)
+
+- Autorización: una ruta nueva de Express o un controlador de NestJS sin el middleware o el guard
+  que usan las demás rutas del mismo router. Un recurso buscado por `req.params.id` sin filtrar por
+  el usuario de la sesión es sospechoso. En Next.js, una route handler o server action que cambia
+  datos sin comprobar la sesión.
+- Inyección: SQL con plantillas o concatenación (`` `SELECT ... ${x}` ``) fuera de un query builder
+  que parametrice; en MongoDB, objetos de la petición pasados tal cual a un filtro (`find(req.body)`).
+  `child_process.exec` con entrada del usuario; `eval`, `new Function`. Rutas de ficheros con
+  `path.join` sobre entrada del usuario sin comprobar que no sale de la carpeta.
+- XSS: `dangerouslySetInnerHTML`, `v-html` o `innerHTML` con datos del usuario. JSX y las plantillas
+  de Vue escapan por defecto.
+- Contaminación de prototipos: mezclar objetos de la petición con `Object.assign` o un merge profundo
+  propio.
+- Regresiones: promesas sin `await` cuyo error o resultado se pierde, `==` donde importa el tipo,
+  cambios en el tipo exportado que rompen a quien lo importa.
+
+### Python (Django, Flask, FastAPI)
+
+- Autorización: vistas nuevas sin `login_required`, `permission_classes` o la dependencia de
+  autenticación que usan las demás. `Model.objects.get(pk=...)` sin filtrar por el usuario es
+  sospechoso.
+- Inyección: SQL con f-strings, `%` o `+` en `cursor.execute`, `raw()` o `text()`; los parámetros
+  separados no lo son. `subprocess` con `shell=True` y entrada del usuario; `eval`, `exec`,
+  `pickle.loads` o `yaml.load` sin `SafeLoader` sobre datos externos.
+- Plantillas: `|safe`, `mark_safe` o `Markup` con datos del usuario; `autoescape` desactivado.
+- Asignación masiva: `Model(**request.data)` o `serializer` con `fields = '__all__'` donde hay campos
+  que el usuario no debe poder cambiar.
+- Configuración: `DEBUG = True`, `ALLOWED_HOSTS = ['*']` o una `SECRET_KEY` escrita en el código en
+  ficheros de producción.
+
 ## Qué NO proponer
 
 - Estilo, nombres, formato, comentarios, documentación ni pruebas que faltan.
