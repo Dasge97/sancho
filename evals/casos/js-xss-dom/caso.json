@@ -1,0 +1,14 @@
+{
+  "titulo": "Vista previa del nombre del cliente",
+  "descripcion": "Código del navegador que mete un parámetro de la URL en innerHTML. El fichero es nuevo: no se ve qué página lo carga.",
+  "esperados": [
+    {
+      "fichero": "public/js/preview.js",
+      "texto": ".innerHTML = '<strong>' + customer",
+      "tipo": [
+        "security"
+      ],
+      "nota": "XSS con un enlace manipulado."
+    }
+  ]
+}

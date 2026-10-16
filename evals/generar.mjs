@@ -421,6 +421,21 @@ const otherCases = {
   res.json(rows[0]);
 });
 `)},
+  'js-xss-dom': {base: express, caso: {titulo: 'Vista previa del nombre del cliente', descripcion: 'Código del navegador que mete un parámetro de la URL en innerHTML. El fichero es nuevo: no se ve qué página lo carga.',
+    esperados: [{fichero: 'public/js/preview.js', texto: ".innerHTML = '<strong>' + customer", tipo: ['security'], nota: 'XSS con un enlace manipulado.'}]},
+    cambios: {'public/js/preview.js': `// Vista previa de la factura: muestra el nombre del cliente que llega en la URL.
+const params = new URLSearchParams(window.location.search);
+const customer = params.get('customer') || '';
+
+document.getElementById('preview-customer').innerHTML = '<strong>' + customer + '</strong>';
+`}},
+  'js-texto-seguro': {base: express, caso: {titulo: 'Vista previa del nombre del cliente, como texto', descripcion: 'Igual que js-xss-dom, pero con textContent. No hay nada que comentar.', esperados: []},
+    cambios: {'public/js/preview.js': `// Vista previa de la factura: muestra el nombre del cliente que llega en la URL.
+const params = new URLSearchParams(window.location.search);
+const customer = params.get('customer') || '';
+
+document.getElementById('preview-customer').textContent = customer;
+`}},
   'django-idor': {base: django, caso: {titulo: 'Detalle de una factura', descripcion: 'La vista exige sesión pero no filtra la factura por su dueño.',
     esperados: [{fichero: 'billing/views.py', texto: 'get_object_or_404(Invoice, pk=pk)', tipo: ['authorization', 'security'], nota: 'Cualquier usuario lee facturas ajenas.'}]},
     cambios: djangoViews(`@login_required

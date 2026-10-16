@@ -1,0 +1,8 @@
+{
+  "name": "facturas-api",
+  "type": "commonjs",
+  "dependencies": {
+    "express": "^4.21.0",
+    "pg": "^8.13.0"
+  }
+}

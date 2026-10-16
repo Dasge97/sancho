@@ -1,0 +1,5 @@
+{
+  "titulo": "Vista previa del nombre del cliente, como texto",
+  "descripcion": "Igual que js-xss-dom, pero con textContent. No hay nada que comentar.",
+  "esperados": []
+}
