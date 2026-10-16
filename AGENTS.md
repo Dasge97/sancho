@@ -1,6 +1,6 @@
 # Trabajar en Sancho
 
-Sancho es un revisor de PR de Bitbucket Cloud. Este repositorio está en fase de documentación; no confundir funciones planificadas con funciones implementadas.
+Sancho es un revisor de PR de Bitbucket Cloud. Este repositorio contiene una aplicación V1 en desarrollo; distingue funciones implementadas de planificadas y no confundas un simulador con una integración real.
 
 1. Lee README.md, docs/01-decisiones.md, HANDOFF.md y PROGRESS.md antes de implementar.
 2. Sigue las tareas y criterios de salida de docs/06-implementacion.md. Actualiza PROGRESS.md con lo que realmente se haya hecho y comprobado.

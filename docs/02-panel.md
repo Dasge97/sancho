@@ -2,7 +2,7 @@
 
 ## Principios
 
-Interfaz en español, escritorio primero y usable en móvil. Mostrar resultados y acciones claras. Nunca etiquetar una revisión fallida o parcial como «todo correcto». Los gráficos iniciales deben servir para consumo y actividad; no crear métricas ficticias de productividad o dinero ahorrado.
+Interfaz en español, escritorio primero y usable en móvil. Mostrar resultados y acciones claras. Nunca etiquetar una revisión fallida o parcial como «todo correcto». Los gráficos iniciales deben servir para consumo y actividad; no crear métricas ficticias de productividad o dinero ahorrado. La identidad visual usa el logotipo de `assets/Seis logotipos de Sancho y programación.png` y la paleta del dosier: verde pino `#0F2D23`, verde `#2E7D5B`, acento `#46C278`, amarillo `#F4B942`, fondo crema `#FFF8E9`, superficies `#E6EDE6`, texto `#1A1D23` y texto secundario `#64748B`.
 
 ## Pantallas
 

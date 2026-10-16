@@ -59,14 +59,15 @@ No usar un porcentaje inventado de confianza como único filtro. Si falta contex
 
 Un resumen del bot por PR, actualizado: commit revisado, alcance, hallazgos, limitaciones y estado. No afirmar «PR segura» ni aprobar automáticamente.
 
-Comentario en línea propuesto:
+Comentario en línea (decidido el 16-10-2026: breve, tres líneas; el detalle completo queda en el panel):
 
-    [Alta · Autorización] Falta comprobar el propietario del registro
-    En esta ruta, un usuario autenticado puede solicitar un registro ajeno
-    mediante su identificador. El método mostrado consulta por ID y no
-    aplica la política de acceso usada en las demás rutas relacionadas.
-    Impacto: acceso a datos de otro usuario.
-    Propuesta: aplicar la autorización antes de devolver el recurso.
+    🔴 **Registro ajeno accesible por su id**
+    Un usuario autenticado puede leer registros de otras personas cambiando el id.
+    **Arreglo:** aplica la política de autorización antes de devolverlo. · [Detalle](enlace al panel)
+
+Resumen de la PR: índice numerado con gravedad, título corto y `fichero:línea`, sin repetir el texto de los comentarios; una línea final con ficheros revisados, commit y enlace a la revisión completa. Sin hallazgos, una sola línea. Si la revisión fue parcial, una línea de aviso. 🔴 = crítico o alto; 🟠 = medio.
+
+El modelo devuelve campos cortos (`short_title` ≤ 60, `short_impact` ≤ 140, `short_fix` ≤ 140 caracteres) además del detalle largo; el servidor los recorta si se pasan. La marca para reconocer comentarios propios va en los parámetros del enlace «Detalle», porque Bitbucket muestra los comentarios HTML como texto.
 
 Es un ejemplo ficticio, no un hallazgo real. Los comentarios definitivos deben contener evidencia del proyecto concreto.
 

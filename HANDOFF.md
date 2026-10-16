@@ -1,6 +1,6 @@
 # Instrucción para el modelo implementador
 
-Estamos construyendo Sancho, un revisor de pull requests para Bitbucket Cloud con un panel interno. Lee README.md y docs/01-decisiones.md antes de escribir código. La documentación contiene decisiones del usuario y propuestas técnicas; no son equivalentes.
+Estamos construyendo Sancho, un revisor de pull requests para Bitbucket Cloud con un panel interno. La implementación V1 fue autorizada expresamente el 15-10-2026. Lee README.md, docs/01-decisiones.md y PROGRESS.md antes de continuar código. La documentación contiene decisiones del usuario y propuestas técnicas; no son equivalentes.
 
 Tu objetivo es implementar la primera versión descrita en docs/06-implementacion.md, por tareas pequeñas. El producto revisa PHP/Symfony/Laravel con la API de OpenAI y comenta problemas fundamentados. No modifica código ni bloquea fusiones en V1.
 
@@ -10,7 +10,7 @@ Tu objetivo es implementar la primera versión descrita en docs/06-implementacio
 2. Inspecciona el repositorio de destino y sus instrucciones. No sobrescribas trabajo existente.
 3. Resume decisiones confirmadas y propuestas abiertas. Usa Node.js + TypeScript + Vue + PostgreSQL, ya confirmado en D17. Concreta la identidad Bitbucket antes de conectar; no repitas preguntas ya respondidas.
 4. Actualiza PROGRESS.md con el estado real, sin marcar nada implementado por existir una especificación.
-5. Selecciona una tarea de la primera fase incompleta. Explica qué cambiarás y qué validará su funcionamiento.
+5. Continúa desde la primera tarea incompleta. Explica qué cambiarás y qué validará su funcionamiento.
 
 ## Reglas de trabajo
 

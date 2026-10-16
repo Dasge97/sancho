@@ -4,7 +4,7 @@
 
 | ID | Decisión |
 | --- | --- |
-| D01 | Planificar y documentar ahora; implementar después con otro modelo más barato. |
+| D01 | Planificación inicial seguida de autorización expresa para implementar la V1 en este repositorio (15-10-2026). |
 | D02 | Bitbucket Cloud, en bitbucket.org. |
 | D03 | Panel central para toda la configuración habitual y consulta de datos. |
 | D04 | Uso por varias personas del mismo equipo. |
@@ -55,3 +55,7 @@ Un administrador configura conexiones y activa un repositorio desde el panel; un
 Correcciones, escritura de código, aprobación o rechazo automático, merge, bloqueo de ramas, facturación SaaS, empresas aisladas, login federado, permisos individuales por repositorio, chat general, extensión IDE, GitHub/GitLab y avisos por correo o Slack.
 
 Excluir una capacidad de V1 no equivale a prohibirla en el producto futuro.
+
+## Cambio de alcance registrado
+
+El usuario pidió «revisa este proyecto, e implementalo entero» el 15 de octubre de 2026. Esta instrucción actualiza D01 y autoriza implementar la V1 especificada. Las reglas de no desplegar, no publicar cambios remotos, no modificar código de repositorios revisados y no aprobar o fusionar PR permanecen vigentes.
