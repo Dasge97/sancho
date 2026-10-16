@@ -1,0 +1,200 @@
+/* Variables de diseño de Sancho (skill diseno-web).
+   Colores de la guía de marca (assets/Guía de marca Sancho en tonos tierra.png):
+   verde principal #0F2D23 con su gama #2E7D5B y #46C278, amarillo de apoyo #F4B942,
+   fondo crema #FFF8E9, superficies #E6EDE6 y texto #1A1D23.
+   Los componentes solo usan las variables de función (--color-*), nunca la paleta directa. */
+
+:root {
+  /* Verde de marca, del más claro al más oscuro. 950, 600 y 400 son los de la guía. */
+  --green-50: #f0f8f2;
+  --green-100: #dcefe2;
+  --green-200: #b8dfc6;
+  --green-300: #86cfa2;
+  --green-400: #46c278;
+  --green-500: #36a066;
+  --green-600: #2e7d5b;
+  --green-700: #24664a;
+  --green-800: #1b4f3a;
+  --green-900: #143d2e;
+  --green-950: #0f2d23;
+
+  /* Amarillo de apoyo (acento). 500 es el de la guía. */
+  --gold-50: #fff8e9;
+  --gold-100: #fdeec8;
+  --gold-300: #f8d27f;
+  --gold-500: #f4b942;
+  --gold-700: #9a6a0c;
+  --gold-900: #4a3305;
+
+  /* Neutros cálidos, teñidos de verde y crema. */
+  --neutral-0: #fffdf8;
+  --neutral-50: #fff8e9;
+  --neutral-100: #f4f1e6;
+  --neutral-150: #e6ede6;
+  --neutral-200: #dbe3da;
+  --neutral-300: #c3cec4;
+  --neutral-500: #7d8a82;
+  --neutral-600: #5b6660;
+  --neutral-700: #3f4944;
+  --neutral-900: #1a1d23;
+
+  /* Estado. La guía usa el verde para «completada» y el amarillo para «en revisión». */
+  --state-success: #2e7d5b;
+  --state-success-dot: #46c278;
+  --state-warning: #8a5d06;
+  --state-warning-dot: #f4b942;
+  --state-info: #2457a6;
+  --state-info-dot: #3b74d1;
+  --state-danger: #b3362b;
+  --state-danger-dot: #e0483b;
+
+  /* Tipografía: una familia; escala 1,2-1,25. */
+  --font-sans: "DM Sans Variable", "DM Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 1.875rem;
+  --text-3xl: 2.25rem;
+
+  /* Espaciado: múltiplos de 4. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* Forma. */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 999px;
+  --control-height: 40px;
+
+  /* Movimiento. */
+  --duration: 180ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --sidebar-width: 248px;
+  --topbar-height: 56px;
+  /* Ancho máximo solo para pantallas muy anchas; por debajo, el contenido usa todo el ancho. */
+  --content-max: 1680px;
+  /* Estado activo (estilo de Hangar): línea en degradado que se desvanece hacia los lados y un
+     brillo suave para los elementos de lista. El menú lateral siempre es oscuro: usa el verde claro. */
+  --sidebar-active-line: linear-gradient(90deg, transparent, var(--green-400) 50%, transparent);
+  --sidebar-active-glow: linear-gradient(90deg, transparent, rgb(70 194 120 / 0.16) 50%, transparent);
+
+  /* ---- Modo claro ---- */
+  color-scheme: light;
+  --color-bg: var(--neutral-50);
+  --color-surface: var(--neutral-0);
+  --color-surface-muted: var(--neutral-150);
+  --color-surface-hover: var(--neutral-100);
+  --color-border: var(--neutral-200);
+  --color-border-strong: var(--neutral-300);
+  --color-text: var(--neutral-900);
+  --color-text-muted: var(--neutral-600);
+  --color-primary: var(--green-700);
+  --color-primary-hover: var(--green-800);
+  --color-primary-soft: var(--green-50);
+  --color-primary-text: var(--green-700);
+  --color-on-primary: #ffffff;
+  --color-accent: var(--gold-500);
+  --color-accent-hover: var(--gold-300);
+  --color-on-accent: var(--green-950);
+  --color-accent-soft: var(--gold-100);
+  --color-focus: var(--green-600);
+  --color-active: var(--green-600);
+  --active-line: linear-gradient(90deg, transparent, var(--color-active) 50%, transparent);
+  --color-sidebar: var(--green-950);
+  --color-sidebar-text: #c9d8cf;
+  --color-sidebar-active: var(--green-800);
+  --color-sidebar-muted: #8fa89a;
+  --color-success-text: var(--state-success);
+  --color-success-soft: #e3f3e8;
+  --color-warning-text: var(--state-warning);
+  --color-warning-soft: #fdf1d4;
+  --color-info-text: var(--state-info);
+  --color-info-soft: #e5edf9;
+  --color-danger-text: var(--state-danger);
+  --color-danger-soft: #fbe7e4;
+  --color-skeleton: var(--neutral-150);
+  --shadow-1: 0 1px 2px rgb(15 45 35 / 0.06);
+  --shadow-2: 0 8px 20px rgb(15 45 35 / 0.1);
+  --shadow-3: 0 20px 48px rgb(15 45 35 / 0.18);
+}
+
+/* ---- Modo oscuro: sigue al sistema salvo que se elija claro; se fuerza con data-theme ---- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --color-bg: #0b1f18;
+    --color-surface: #11281f;
+    --color-surface-muted: #183428;
+    --color-surface-hover: #1c3a2d;
+    --color-border: #22412f;
+    --color-border-strong: #2f5641;
+    --color-text: #eef3ec;
+    --color-text-muted: #a7b8ad;
+    --color-primary: var(--green-400);
+    --color-primary-hover: var(--green-300);
+    --color-primary-soft: #173a2b;
+    --color-primary-text: var(--green-300);
+    --color-on-primary: var(--green-950);
+    --color-accent-soft: #3a2c0c;
+    --color-focus: var(--green-400);
+    --color-active: var(--green-400);
+    --color-sidebar: #08170f;
+    --color-sidebar-active: #1b4f3a;
+    --color-success-text: var(--green-300);
+    --color-success-soft: #173a2b;
+    --color-warning-text: var(--gold-300);
+    --color-warning-soft: #3a2c0c;
+    --color-info-text: #9fbdf0;
+    --color-info-soft: #1a2c48;
+    --color-danger-text: #f2a299;
+    --color-danger-soft: #45201c;
+    --color-skeleton: #1c3a2d;
+    --shadow-1: 0 0 0 1px #22412f;
+    --shadow-2: 0 0 0 1px #2f5641, 0 8px 20px rgb(0 0 0 / 0.35);
+    --shadow-3: 0 0 0 1px #2f5641, 0 20px 48px rgb(0 0 0 / 0.5);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #0b1f18;
+  --color-surface: #11281f;
+  --color-surface-muted: #183428;
+  --color-surface-hover: #1c3a2d;
+  --color-border: #22412f;
+  --color-border-strong: #2f5641;
+  --color-text: #eef3ec;
+  --color-text-muted: #a7b8ad;
+  --color-primary: var(--green-400);
+  --color-primary-hover: var(--green-300);
+  --color-primary-soft: #173a2b;
+  --color-primary-text: var(--green-300);
+  --color-on-primary: var(--green-950);
+  --color-accent-soft: #3a2c0c;
+  --color-focus: var(--green-400);
+  --color-active: var(--green-400);
+  --color-sidebar: #08170f;
+  --color-sidebar-active: #1b4f3a;
+  --color-success-text: var(--green-300);
+  --color-success-soft: #173a2b;
+  --color-warning-text: var(--gold-300);
+  --color-warning-soft: #3a2c0c;
+  --color-info-text: #9fbdf0;
+  --color-info-soft: #1a2c48;
+  --color-danger-text: #f2a299;
+  --color-danger-soft: #45201c;
+  --color-skeleton: #1c3a2d;
+  --shadow-1: 0 0 0 1px #22412f;
+  --shadow-2: 0 0 0 1px #2f5641, 0 8px 20px rgb(0 0 0 / 0.35);
+  --shadow-3: 0 0 0 1px #2f5641, 0 20px 48px rgb(0 0 0 / 0.5);
+}
