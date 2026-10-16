@@ -462,7 +462,8 @@ for (const [name, c] of Object.entries(cases)) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sancho-eval-'));
   write(tmp, c.base); git(tmp, 'init', '-q'); git(tmp, 'config', 'core.autocrlf', 'false'); git(tmp, 'add', '.'); git(tmp, 'commit', '-qm', 'base');
   write(tmp, c.cambios);
-  const diff = git(tmp, 'diff', '--no-color', '--no-ext-diff');
+  git(tmp, 'add', '-A');
+  const diff = git(tmp, 'diff', '--cached', '--no-color', '--no-ext-diff');
   const dir = path.join(OUT, name);
   fs.rmSync(dir, {recursive: true, force: true});
   write(path.join(dir, 'repo'), {...c.base, ...c.cambios});
