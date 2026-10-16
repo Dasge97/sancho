@@ -1,0 +1,18 @@
+diff --git a/app/Http/Controllers/ProductController.php b/app/Http/Controllers/ProductController.php
+index b36cc6f..2b46a74 100644
+--- a/app/Http/Controllers/ProductController.php
++++ b/app/Http/Controllers/ProductController.php
+@@ -12,10 +12,9 @@ class ProductController extends Controller
+     {
+         $request->validate(['q' => 'required|string|max:100']);
+ 
+-        $products = DB::table('products')
+-            ->where('name', 'like', '%'.$request->input('q').'%')
+-            ->limit(20)
+-            ->get();
++        $products = DB::select(
++            "SELECT * FROM products WHERE name LIKE '%".$request->input('q')."%' LIMIT 20"
++        );
+ 
+         return response()->json($products);
+     }

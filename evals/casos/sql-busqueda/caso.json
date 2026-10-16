@@ -1,0 +1,14 @@
+{
+  "titulo": "Búsqueda de productos más rápida",
+  "descripcion": "Cambia el query builder por SQL concatenado con la entrada del usuario.",
+  "esperados": [
+    {
+      "fichero": "app/Http/Controllers/ProductController.php",
+      "texto": "DB::select(",
+      "tipo": [
+        "security"
+      ],
+      "nota": "Inyección SQL con el parámetro q."
+    }
+  ]
+}

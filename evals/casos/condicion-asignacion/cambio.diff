@@ -1,0 +1,13 @@
+diff --git a/app/Http/Controllers/OrderController.php b/app/Http/Controllers/OrderController.php
+index f7483f4..efff9ab 100644
+--- a/app/Http/Controllers/OrderController.php
++++ b/app/Http/Controllers/OrderController.php
+@@ -11,7 +11,7 @@ class OrderController extends Controller
+     {
+         $this->authorize('update', $order);
+ 
+-        if ($order->status === 'paid') {
++        if ($order->status = 'paid') {
+             $order->update(['status' => 'shipped', 'shipped_at' => now()]);
+         }
+ 

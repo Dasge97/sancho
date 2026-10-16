@@ -24,6 +24,14 @@ export function annotateDiff(diff: string): string {
   }).join('\n');
 }
 
+/** Datos de una revisión para el modelo: la PR, bloques extra (seguimiento, análisis estático), el diff
+ *  numerado y, sin agente, el contexto. Lo usan el worker y el banco de pruebas (`npm run eval`). */
+export function reviewData(input: {title: string; repository: string; extra?: string[]; diff: string; context: string | null}): string {
+  return ['<pull_request>', 'Título: ' + input.title, 'Repositorio: ' + input.repository, '</pull_request>', ...(input.extra || []),
+    '', '<diff>', annotateDiff(input.diff), '</diff>',
+    ...(input.context === null ? [] : ['', '<contexto>', input.context || '(sin ficheros de contexto)', '</contexto>'])].join('\n');
+}
+
 /** Ficheros del diff que siguen existiendo en el commit de la PR (los borrados no se pueden leer). */
 export function changedFiles(diff: string): string[] {
   const files: string[] = [];

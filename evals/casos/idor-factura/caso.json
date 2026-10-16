@@ -1,0 +1,15 @@
+{
+  "titulo": "Muestra una factura por su id",
+  "descripcion": "Nuevo endpoint que devuelve una factura sin comprobar que es del usuario. La política InvoicePolicy existe pero no se usa.",
+  "esperados": [
+    {
+      "fichero": "app/Http/Controllers/InvoiceController.php",
+      "texto": "Invoice::findOrFail($id)",
+      "tipo": [
+        "authorization",
+        "security"
+      ],
+      "nota": "Cualquier usuario lee facturas ajenas cambiando el id."
+    }
+  ]
+}

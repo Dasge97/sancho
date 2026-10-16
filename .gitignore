@@ -18,3 +18,4 @@ dist-server/
 
 backups/
 .claude-cerebro/
+evals/resultados/

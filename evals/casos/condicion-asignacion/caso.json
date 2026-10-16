@@ -1,0 +1,15 @@
+{
+  "titulo": "Simplifica el envío de pedidos",
+  "descripcion": "Un = en lugar de === hace que todos los pedidos se den por pagados y se envíen.",
+  "esperados": [
+    {
+      "fichero": "app/Http/Controllers/OrderController.php",
+      "texto": "if ($order->status = 'paid') {",
+      "tipo": [
+        "correctness",
+        "data_integrity"
+      ],
+      "nota": "Envía pedidos sin pagar."
+    }
+  ]
+}

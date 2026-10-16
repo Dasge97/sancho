@@ -2,7 +2,9 @@ import 'dotenv/config';
 import 'express-async-errors';
 import express from 'express'; import session from 'express-session'; import PgSession from 'connect-pg-simple'; import helmet from 'helmet'; import rateLimit from 'express-rate-limit'; import bcrypt from 'bcryptjs'; import crypto from 'node:crypto'; import path from 'node:path'; import {fileURLToPath,pathToFileURL} from 'node:url'; import {z} from 'zod';
 import {pool,migrate} from './db.js';
-import {annotateDiff,changedFiles,gatherContext} from './context.js';
+import {annotateDiff,changedFiles,gatherContext,reviewData} from './context.js';
+import {DETECTION_SCHEMA,VERIFICATION_SCHEMA} from './schemas.js';
+import {qualityReport} from './quality.js';
 import {staticAnalysis,type StaticReport} from './static-analysis.js';
 import {parseRepoConfig,rulesForFiles,type RepoConfig} from './repo-config.js';
 import {buildInstructions,defaultPrompt,PROMPT_NAMES,shortHash,type PromptName,type PromptOverrides} from './prompts.js';
@@ -64,6 +66,22 @@ app.get('/api/repositories/:id/repo-config',signedIn,async(req,res)=>{
 app.get('/api/reviews',signedIn,async(_req,res)=>res.json((await pool.query('SELECT r.*,p.number,p.title,p.url,repo.name repository FROM review_runs r JOIN pull_requests p ON p.id=r.pull_request_id JOIN repositories repo ON repo.id=r.repository_id ORDER BY r.created_at DESC LIMIT 100')).rows));
 app.get('/api/reviews/:id',signedIn,async(req,res)=>{const run=await pool.query('SELECT r.*,p.number,p.title,p.url,repo.name repository FROM review_runs r JOIN pull_requests p ON p.id=r.pull_request_id JOIN repositories repo ON repo.id=r.repository_id WHERE r.id=$1',[req.params.id]);if(!run.rows[0])return res.status(404).json({error:'Revisión no encontrada'});const [findings,usage]=await Promise.all([pool.query('SELECT * FROM findings WHERE run_id=$1 ORDER BY severity,path,start_line',[req.params.id]),pool.query('SELECT provider,model,input_tokens,output_tokens,cost_usd,status,created_at FROM usage_calls WHERE run_id=$1',[req.params.id])]);res.json({run:run.rows[0],findings:findings.rows,usage:usage.rows})});
 app.post('/api/repositories/:id/reviews',signedIn,async(req,res)=>{const p=z.object({number:z.number().int().positive(),publish:z.boolean().default(false),idempotency_key:z.string().min(8)}).safeParse(req.body);if(!p.success)return res.status(422).json({error:'Datos no válidos'});const repo=await pool.query('SELECT * FROM repositories WHERE id=$1',[req.params.id]);if(!repo.rows[0]||!repo.rows[0].active)return res.status(404).json({error:'Repositorio no conectado o pausado'});if(p.data.publish&&(req.session as any).user.role!=='admin')return res.status(403).json({error:'Solo administración puede solicitar publicación'});const result=await createReview(repo.rows[0],p.data.number,'manual',p.data.publish,(req.session as any).user.id+':'+req.params.id+':'+p.data.idempotency_key);if(result.error)return res.status(404).json(result);res.status(result.created?202:200).json(result)});
+// Calidad de las revisiones en un periodo: problemas publicados y qué hizo el equipo con ellos.
+app.get('/api/quality',signedIn,async(req,res)=>{
+  const days=[30,90,365].includes(Number(req.query.days))?Number(req.query.days):90;
+  const issues=(await pool.query(`WITH issues AS (
+    SELECT r.pull_request_id pr,f.fingerprint,(array_agg(f.category ORDER BY r.created_at DESC))[1] category,(array_agg(f.severity ORDER BY r.created_at DESC))[1] severity,(array_agg(f.origin ORDER BY r.created_at DESC))[1] origin,
+      (array_agg(r.coverage->>'prompt_version' ORDER BY r.created_at))[1] prompt_version,(array_agg(r.coverage->>'engine' ORDER BY r.created_at))[1] engine,min(r.created_at) first_seen,
+      coalesce(bool_or(fb.vote='useful'),false) useful,coalesce(bool_or(fb.vote='false_positive'),false) false_positive
+    FROM findings f JOIN review_runs r ON r.id=f.run_id LEFT JOIN feedback fb ON fb.finding_id=f.id
+    WHERE f.verified AND r.created_at>now()-make_interval(days=>$1) GROUP BY r.pull_request_id,f.fingerprint)
+    SELECT i.*,repo.name repository,t.status thread_status,(t.status='resolved' AND t.resolved_run_id IS NOT NULL) fixed_by_commit
+    FROM issues i JOIN pull_requests p ON p.id=i.pr JOIN repositories repo ON repo.id=p.repository_id LEFT JOIN finding_threads t ON t.pull_request_id=i.pr AND t.fingerprint=i.fingerprint`,[days])).rows;
+  // Los últimos falsos positivos con su motivo: lo más útil para corregir las instrucciones.
+  const misses=(await pool.query(`SELECT f.title,f.short_title,f.path,f.start_line,f.category,f.origin,fb.reason,fb.created_at,r.id run_id,repo.name repository FROM feedback fb JOIN findings f ON f.id=fb.finding_id JOIN review_runs r ON r.id=f.run_id JOIN pull_requests p ON p.id=r.pull_request_id JOIN repositories repo ON repo.id=p.repository_id WHERE fb.vote='false_positive' AND fb.created_at>now()-make_interval(days=>$1) ORDER BY fb.created_at DESC LIMIT 15`,[days])).rows;
+  const reviews=(await pool.query("SELECT count(*)::int n FROM review_runs WHERE finished_at IS NOT NULL AND status IN ('completed','partial','superseded') AND created_at>now()-make_interval(days=>$1)",[days])).rows[0].n;
+  res.json({days,reviews,...qualityReport(issues),recent_false_positives:misses});
+});
 app.get('/api/usage',signedIn,async(_req,res)=>{const {rows}=await pool.query("SELECT date_trunc('day',created_at) AS usage_day,model,count(*) calls,sum(input_tokens) input_tokens,sum(output_tokens) output_tokens,sum(cost_usd) cost_usd,count(*) FILTER(WHERE cost_usd IS NULL) unknown_cost_calls FROM usage_calls WHERE created_at>=date_trunc('month',now()) GROUP BY 1,2 ORDER BY 1 DESC");const totals=await pool.query("SELECT COALESCE(sum(cost_usd),0) known_cost,count(*) FILTER(WHERE cost_usd IS NULL) unknown_cost_calls FROM usage_calls WHERE created_at>=date_trunc('month',now())");const budget=await pool.query("SELECT value FROM settings WHERE key='monthly_budget_usd'");const limit=budget.rows[0]?.value??null,known=Number(totals.rows[0].known_cost);res.json({monthly_budget_usd:limit,monthly_known_cost:known,unknown_cost_calls:Number(totals.rows[0].unknown_cost_calls),budget_warning:limit!==null&&known>=Number(limit)*0.8,over_budget:limit!==null&&known>=Number(limit),warning_only:true,days:rows})});
 // Instrucciones de la IA editables desde el panel. Cada cambio es una versión nueva; una versión
 // con contenido nulo significa «volver al original de prompts/». La activa es la más reciente.
@@ -550,7 +568,7 @@ async function runReview(job:any){
       if(previousSha&&sinceFiles)sinceBlock=['','<cambios_desde_la_ultima_revision commit_anterior="'+previousSha.slice(0,12)+'">',...(sinceFiles.length?sinceFiles.map(f=>'- '+f):['(ningún fichero)']),'</cambios_desde_la_ultima_revision>'];
     }
     const openBlock=openThreads.length?['','<comentarios_abiertos>',JSON.stringify(openThreads.map((t:any)=>({id:t.ref,path:t.path,line:t.start_line,titulo:t.title})),null,1),'</comentarios_abiertos>']:[];
-    const dataBlocks=['<pull_request>','Título: '+pr.title,'Repositorio: '+repo.workspace+'/'+repo.slug,'</pull_request>',...sinceBlock,...openBlock,...staticBlock,'','<diff>',annotateDiff(diff),'</diff>',...(agentMode?[]:['','<contexto>',context.text||'(sin ficheros de contexto)','</contexto>'])].join('\n');
+    const dataBlocks=reviewData({title:pr.title,repository:repo.workspace+'/'+repo.slug,extra:[...sinceBlock,...openBlock,...staticBlock],diff,context:agentMode?null:context.text});
     const rules={global:await setting('review_rules'),projectContext:repo.config?.context,repository:repo.config?.rules,profile:profile?.content,repoFileContext:repoCfg.config?.contexto,repoFileRules:rulesForFiles(repoCfg.config,changedFiles(diff)),learned:await learnedRules(repo.id)};
     const overrides=await activePrompts();
     const detectionInstructions=buildInstructions('deteccion',rules,agentMode,overrides),verificationInstructions=buildInstructions('verificacion',rules,agentMode,overrides);
@@ -565,16 +583,14 @@ async function runReview(job:any){
     };
     if(!diff){coverage.limitations.push('No hay archivos elegibles para revisar tras aplicar exclusiones y límites.')}
     else if(agentMode||(openai&&model)){
-      const detectionSchema={type:'object',additionalProperties:false,required:['summary','walkthrough','changes','follow_up','candidates'],properties:{summary:{type:'string'},walkthrough:{type:'string'},follow_up:{type:'array',items:{type:'object',additionalProperties:false,required:['id','status','reason'],properties:{id:{type:'string'},status:{type:'string',enum:['fixed','still_present','unclear']},reason:{type:'string'}}}},changes:{type:'array',items:{type:'object',additionalProperties:false,required:['path','summary'],properties:{path:{type:'string'},summary:{type:'string'}}}},candidates:{type:'array',items:{type:'object',additionalProperties:false,properties:{candidate_id:{type:'string'},path:{type:'string'},start_line:{type:'integer'},severity:{type:'string',enum:['medium','high','critical']},category:{type:'string',enum:['security','authorization','correctness','data_integrity','performance','compatibility','other']},title:{type:'string'},scenario:{type:'string'},impact:{type:'string'},evidence:{type:'string'},recommendation:{type:'string'},short_title:{type:'string'},short_impact:{type:'string'},short_fix:{type:'string'},suggestion:{type:'string'}},required:['candidate_id','path','start_line','severity','category','title','scenario','impact','evidence','recommendation','short_title','short_impact','short_fix','suggestion']}}}};
-      const verificationSchema={type:'object',additionalProperties:false,properties:{results:{type:'array',items:{type:'object',additionalProperties:false,properties:{candidate_id:{type:'string'},disposition:{type:'string',enum:['supported','rejected','insufficient_context']},severity:{type:'string',enum:['medium','high','critical']},reason:{type:'string'}},required:['candidate_id','disposition','severity','reason']}}},required:['results']};
-      const detection=await ask('sancho_detection',detectionInstructions,dataBlocks,detectionSchema);
+      const detection=await ask('sancho_detection',detectionInstructions,dataBlocks,DETECTION_SCHEMA);
       summary=String(detection.summary||summary);
       walkthrough=clip(String(detection.walkthrough||''),1200)||null;
       followUp=Array.isArray(detection.follow_up)?detection.follow_up.filter((f:any)=>f&&openThreads.some((t:any)=>t.ref===f.id)):[];
       changes=(Array.isArray(detection.changes)?detection.changes:[]).filter((c:any)=>c&&c.path&&c.summary).slice(0,25).map((c:any)=>({path:String(c.path).slice(0,300),summary:clip(String(c.summary),160)}));
       candidates=Array.isArray(detection.candidates)?detection.candidates.slice(0,40).map((f:any,i:number)=>({...f,candidate_id:'candidate-'+i})):[];
       if(candidates.length){
-        const verify=await ask('sancho_verification',verificationInstructions,['<candidatos>',JSON.stringify(candidates,null,1),'</candidatos>','',dataBlocks].join('\n'),verificationSchema);
+        const verify=await ask('sancho_verification',verificationInstructions,['<candidatos>',JSON.stringify(candidates,null,1),'</candidatos>','',dataBlocks].join('\n'),VERIFICATION_SCHEMA);
         // Solo se publican los confirmados, con la gravedad que da la verificación.
         const decisions=new Map<string,any>((verify.results||[]).map((x:any)=>[String(x.candidate_id),x]));
         confirmed=candidates.filter((f:any)=>decisions.get(String(f.candidate_id))?.disposition==='supported').map((f:any)=>({...f,severity:decisions.get(String(f.candidate_id)).severity||f.severity}));
@@ -615,7 +631,7 @@ async function runReview(job:any){
     for(const s of staticReport.findings){
       if(rank[s.severity]<rank[min]||!addedLineExists(scanDiff,s.path,s.line))continue;
       const fp=findingFingerprint(repo.id,number,{path:s.path,category:s.category,title:s.title});
-      const r=await pool.query("INSERT INTO findings(run_id,fingerprint,path,start_line,severity,category,title,scenario,impact,evidence,recommendation,verified,short_title,short_impact,short_fix) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,$12,$13,$14) ON CONFLICT(run_id,fingerprint) DO NOTHING",[run_id,fp,s.path,s.line,s.severity,s.category,s.title.slice(0,300),s.scenario,s.impact,s.evidence,s.recommendation,clip(s.shortTitle,70),clip(s.shortImpact,160),clip(s.shortFix,160)]);
+      const r=await pool.query("INSERT INTO findings(run_id,fingerprint,path,start_line,severity,category,title,scenario,impact,evidence,recommendation,verified,short_title,short_impact,short_fix,origin) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,$12,$13,$14,$15) ON CONFLICT(run_id,fingerprint) DO NOTHING",[run_id,fp,s.path,s.line,s.severity,s.category,s.title.slice(0,300),s.scenario,s.impact,s.evidence,s.recommendation,clip(s.shortTitle,70),clip(s.shortImpact,160),clip(s.shortFix,160),s.tool]);
       accepted+=r.rowCount||0;
     }
     // Sin llamada a OpenAI (simulador) el resumen por defecto diría «sin hallazgos» aunque los haya.

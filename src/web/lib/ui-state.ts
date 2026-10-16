@@ -61,8 +61,8 @@ export function setTheme(choice: ThemeChoice) {
 
 /* ---- Pantalla actual, en la URL para poder recargar y enlazar ----
    #/ajustes/openai → pantalla y subpestaña. #/revision/<id>/cobertura → pantalla, id y subpestaña. */
-export type ViewName = 'inicio' | 'repositorios' | 'repositorio' | 'revisiones' | 'revision' | 'consumo' | 'ajustes' | 'equipo' | 'auditoria';
-const views: ViewName[] = ['inicio', 'repositorios', 'repositorio', 'revisiones', 'revision', 'consumo', 'ajustes', 'equipo', 'auditoria'];
+export type ViewName = 'inicio' | 'repositorios' | 'repositorio' | 'revisiones' | 'revision' | 'calidad' | 'consumo' | 'ajustes' | 'equipo' | 'auditoria';
+const views: ViewName[] = ['inicio', 'repositorios', 'repositorio', 'revisiones', 'revision', 'calidad', 'consumo', 'ajustes', 'equipo', 'auditoria'];
 // Pantallas de un elemento concreto: llevan su id antes de la subpestaña.
 const withId: ViewName[] = ['revision', 'repositorio'];
 

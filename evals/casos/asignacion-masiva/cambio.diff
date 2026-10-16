@@ -1,0 +1,19 @@
+diff --git a/app/Http/Controllers/ProfileController.php b/app/Http/Controllers/ProfileController.php
+index be1ef50..7812ca8 100644
+--- a/app/Http/Controllers/ProfileController.php
++++ b/app/Http/Controllers/ProfileController.php
+@@ -9,12 +9,12 @@ class ProfileController extends Controller
+ {
+     public function update(Request $request): JsonResponse
+     {
+-        $data = $request->validate([
++        $request->validate([
+             'name' => 'required|string|max:120',
+             'email' => 'required|email',
+         ]);
+ 
+-        $request->user()->update($data);
++        $request->user()->update($request->all());
+ 
+         return response()->json($request->user());
+     }

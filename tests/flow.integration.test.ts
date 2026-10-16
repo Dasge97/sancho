@@ -346,5 +346,11 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     const conversations=await (await call(`/repositories/${repoId}/conversations`)).json();
     expect(conversations.map((c:any)=>c.kind)).toEqual(expect.arrayContaining(['thread','pause','review','resume','help']));
     expect(conversations.find((c:any)=>c.kind==='thread').learned).toContain('Los administradores');
+    // Calidad: el problema de la PR 42 se arregló con un commit, pero el voto de falso positivo pesa
+    // más; el de la PR 44 se retiró tras la respuesta. Los dos cuentan como falsos positivos.
+    const quality=await (await call('/quality?days=30')).json();
+    expect(quality.totals).toMatchObject({fixed_by_commit:1,withdrawn:1,useful:0,false_positive:2,precision:0});
+    expect(quality.by_origin.map((g:any)=>g.key)).toContain('modelo');
+    expect(quality.recent_false_positives[0].reason).toBe('El controlador solo lo usa el panel interno.');
   });
 });

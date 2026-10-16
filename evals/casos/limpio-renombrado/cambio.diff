@@ -1,0 +1,27 @@
+diff --git a/app/Http/Controllers/ProductController.php b/app/Http/Controllers/ProductController.php
+index b36cc6f..2b3578d 100644
+--- a/app/Http/Controllers/ProductController.php
++++ b/app/Http/Controllers/ProductController.php
+@@ -8,15 +8,19 @@ use Illuminate\Support\Facades\DB;
+ 
+ class ProductController extends Controller
+ {
++    /**
++     * Busca productos por nombre. Devuelve como mucho 20 resultados.
++     */
+     public function search(Request $request): JsonResponse
+     {
+         $request->validate(['q' => 'required|string|max:100']);
+ 
+-        $products = DB::table('products')
+-            ->where('name', 'like', '%'.$request->input('q').'%')
++        $term = $request->input('q');
++        $matches = DB::table('products')
++            ->where('name', 'like', '%'.$term.'%')
+             ->limit(20)
+             ->get();
+ 
+-        return response()->json($products);
++        return response()->json($matches);
+     }
+ }

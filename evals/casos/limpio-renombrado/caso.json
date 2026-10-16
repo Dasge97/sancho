@@ -1,0 +1,5 @@
+{
+  "titulo": "Renombra variables y documenta la búsqueda",
+  "descripcion": "Cambio sin efecto en el comportamiento. No hay nada que comentar: mide falsos positivos.",
+  "esperados": []
+}

@@ -1,0 +1,15 @@
+{
+  "titulo": "El perfil acepta más campos",
+  "descripcion": "El usuario puede actualizar cualquier columna, incluida is_admin, porque User tiene $guarded = [].",
+  "esperados": [
+    {
+      "fichero": "app/Http/Controllers/ProfileController.php",
+      "texto": "$request->user()->update($request->all());",
+      "tipo": [
+        "security",
+        "authorization"
+      ],
+      "nota": "Escalada a administrador enviando is_admin=1."
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+diff --git a/app/Http/Controllers/InvoiceController.php b/app/Http/Controllers/InvoiceController.php
+index a131587..3ca9d14 100644
+--- a/app/Http/Controllers/InvoiceController.php
++++ b/app/Http/Controllers/InvoiceController.php
+@@ -13,4 +13,11 @@ class InvoiceController extends Controller
+     {
+         return InvoiceResource::collection($request->user()->invoices()->paginate());
+     }
++
++    public function show(int $id): InvoiceResource
++    {
++        $invoice = Invoice::findOrFail($id);
++
++        return new InvoiceResource($invoice);
++    }
+ }

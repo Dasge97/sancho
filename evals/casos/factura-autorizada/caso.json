@@ -1,0 +1,5 @@
+{
+  "titulo": "Muestra una factura por su id, con su política",
+  "descripcion": "El mismo endpoint que idor-factura, pero aplica InvoicePolicy. No hay nada que comentar: mide falsos positivos.",
+  "esperados": []
+}

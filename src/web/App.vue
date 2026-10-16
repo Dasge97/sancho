@@ -2,7 +2,7 @@
 // Marco del panel: entrada, menú lateral (cajón en móvil), barra superior con migas de pan y la
 // pantalla actual. La pantalla y su subpestaña van en la URL, así que se puede recargar y enlazar.
 import {computed, onMounted, ref, watch, type Component} from 'vue';
-import {ChevronRight, CircleDollarSign, FolderGit2, History, LayoutDashboard, LogOut, Menu, Monitor, Moon, ScanSearch, Settings, Sun, Users, X} from 'lucide-vue-next';
+import {ChevronRight, CircleDollarSign, FolderGit2, Gauge, History, LayoutDashboard, LogOut, Menu, Monitor, Moon, ScanSearch, Settings, Sun, Users, X} from 'lucide-vue-next';
 import {api, post} from './lib/api';
 import {isAdmin, user, type User} from './lib/session';
 import {crumbTail, go, route, setTheme, theme, type ThemeChoice, type ViewName} from './lib/ui-state';
@@ -17,6 +17,7 @@ import RepoDetailView from './views/RepoDetailView.vue';
 import ReviewsView from './views/ReviewsView.vue';
 import ReviewDetailView from './views/ReviewDetailView.vue';
 import UsageView from './views/UsageView.vue';
+import QualityView from './views/QualityView.vue';
 import SettingsView from './views/SettingsView.vue';
 import TeamView from './views/TeamView.vue';
 import AuditView from './views/AuditView.vue';
@@ -26,6 +27,7 @@ const work: NavItem[] = [
   {view: 'inicio', label: 'Panel', icon: LayoutDashboard},
   {view: 'repositorios', label: 'Repositorios', icon: FolderGit2},
   {view: 'revisiones', label: 'Revisiones', icon: ScanSearch},
+  {view: 'calidad', label: 'Calidad', icon: Gauge},
   {view: 'consumo', label: 'Consumo', icon: CircleDollarSign},
 ];
 const admin: NavItem[] = [
@@ -33,7 +35,7 @@ const admin: NavItem[] = [
   {view: 'equipo', label: 'Equipo', icon: Users},
   {view: 'auditoria', label: 'Auditoría', icon: History},
 ];
-const views: Record<ViewName, Component> = {inicio: HomeView, repositorios: ReposView, repositorio: RepoDetailView, revisiones: ReviewsView, revision: ReviewDetailView, consumo: UsageView, ajustes: SettingsView, equipo: TeamView, auditoria: AuditView};
+const views: Record<ViewName, Component> = {inicio: HomeView, repositorios: ReposView, repositorio: RepoDetailView, revisiones: ReviewsView, revision: ReviewDetailView, calidad: QualityView, consumo: UsageView, ajustes: SettingsView, equipo: TeamView, auditoria: AuditView};
 const themes: {value: ThemeChoice; label: string; icon: Component}[] = [
   {value: 'light', label: 'Claro', icon: Sun}, {value: 'dark', label: 'Oscuro', icon: Moon}, {value: 'system', label: 'Sistema', icon: Monitor},
 ];

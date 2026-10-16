@@ -28,5 +28,7 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/dist-server ./dist-server
 COPY --from=build /app/src/db/schema.sql ./dist-server/db/schema.sql
 COPY prompts ./prompts
+# Casos del banco de pruebas: node dist-server/eval.js
+COPY evals/casos ./evals/casos
 EXPOSE 3000
 CMD ["node","dist-server/server.js"]

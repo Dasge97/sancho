@@ -43,3 +43,5 @@ CREATE TABLE IF NOT EXISTS learned_rules (id uuid PRIMARY KEY DEFAULT gen_random
 CREATE INDEX IF NOT EXISTS learned_rules_repo_idx ON learned_rules(repository_id, active);
 -- Código que propone Sancho para sustituir la línea comentada (bloque suggestion de Bitbucket).
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS suggestion text;
+-- Quién encontró el problema: el modelo o una herramienta de análisis estático (gitleaks, php).
+ALTER TABLE findings ADD COLUMN IF NOT EXISTS origin text NOT NULL DEFAULT 'modelo';
