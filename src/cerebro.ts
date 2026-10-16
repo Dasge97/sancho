@@ -39,7 +39,9 @@ async function prepareCheckout(c: {workspace: string; slug: string; commit: stri
     await fs.mkdir(dir, {recursive: true});
     // Las credenciales van como cabecera en variables de entorno de git: ni en la URL, ni en la
     // línea de órdenes (saldría en los mensajes de error), ni en la configuración del repositorio.
-    const auth = 'Authorization: Basic ' + Buffer.from(`${c.email}:${c.token}`).toString('base64');
+    // Por git, Bitbucket acepta los API tokens de Atlassian con este usuario fijo, no con el correo
+    // (el correo solo vale para la API REST).
+    const auth = 'Authorization: Basic ' + Buffer.from(`x-bitbucket-api-token-auth:${c.token}`).toString('base64');
     const url = `https://bitbucket.org/${encodeURIComponent(c.workspace)}/${encodeURIComponent(c.slug)}.git`;
     const env = {...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: auth};
     try {
