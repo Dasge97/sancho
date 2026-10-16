@@ -24,6 +24,13 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     const url=String(input),method=init.method||'GET';
     if(url.startsWith(base))return realFetch(input,init);
     calls.push({method,url,body:init.body?JSON.parse(init.body):undefined});
+    if(url==='http://cerebro.test/tasks'){
+      // El cerebro simulado: el agente "lee" la política y responde con el esquema pedido.
+      const task=JSON.parse(init.body);
+      const verification=task.instructions.includes('escéptico');
+      const output=verification?{results:[{candidate_id:'candidate-0',disposition:'supported',severity:'high',reason:'La política existe pero no se aplica.'}]}:{summary:'Un hallazgo.',candidates:[{candidate_id:'x',path:'src/Controller.php',start_line:2,severity:'high',category:'authorization',title:'Factura ajena accesible por id',scenario:'Cambia el id.',impact:'Lee datos ajenos.',evidence:'find($id) sin authorize; la política InvoicePolicy existe.',recommendation:'Aplicar la política.',short_title:'Factura ajena accesible por id',short_impact:'Un usuario lee facturas de otros cambiando el id.',short_fix:'Llama a `authorize` antes de devolverla.'}]};
+      return json({ok:true,output,text:'',numTurns:4,costUsd:0.12,usage:{input_tokens:5000,output_tokens:600},subscription:true,toolCalls:[{tool:'Grep',input:{pattern:'InvoicePolicy'}},{tool:'Read',input:{file_path:'app/Policies/InvoicePolicy.php'}}]});
+    }
     if(url==='https://api.openai.com/v1/responses'){
       if(openaiFails)return json({error:{message:'bad request'}},400);
       const body=JSON.parse(init.body);
@@ -55,6 +62,8 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     process.env.DATABASE_URL=databaseUrl;
     process.env.SANCHO_ENCRYPTION_KEY=crypto.randomBytes(32).toString('base64');
     process.env.SESSION_SECRET='test-session-secret';
+    process.env.CEREBRO_URL='http://cerebro.test';
+    process.env.CEREBRO_TOKEN='cerebro-test-token';
     vi.stubGlobal('fetch',fakeFetch);
     const db=await import('../src/db.js');pool=db.pool;await db.migrate();
     const mod=await import('../src/server.js');processNextJob=mod.processNextJob;
@@ -62,7 +71,7 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     const address=server.address();base=`http://127.0.0.1:${typeof address==='object'&&address?address.port:0}`;
     await pool.query('TRUNCATE users,sessions,settings,repositories,webhook_events,jobs,usage_calls,audit_events CASCADE');
     const enc=mod.encrypt;
-    await pool.query("INSERT INTO settings(key,value) VALUES('bitbucket_connection',$1),('openai_secret',$2),('model',$3),('review_rules',$4)",[JSON.stringify({workspace:'ws',email:'bot@example.org',secret:enc('bitbucket-token')}),JSON.stringify(enc('sk-test-key-not-real-000000')),JSON.stringify('test-model'),JSON.stringify('No comentes los seeders.')]);
+    await pool.query("INSERT INTO settings(key,value) VALUES('bitbucket_connection',$1),('openai_secret',$2),('model',$3),('review_rules',$4),('review_engine',$5)",[JSON.stringify({workspace:'ws',email:'bot@example.org',secret:enc('bitbucket-token')}),JSON.stringify(enc('sk-test-key-not-real-000000')),JSON.stringify('test-model'),JSON.stringify('No comentes los seeders.'),JSON.stringify('openai')]);
     repoId=(await pool.query("INSERT INTO repositories(remote_uuid,workspace,slug,name,active,webhook_secret) VALUES('{repo-uuid}','ws','repo','repo',true,$1) RETURNING id",[JSON.stringify(enc(WEBHOOK_SECRET))])).rows[0].id;
   });
   afterAll(async()=>{vi.unstubAllGlobals();await new Promise(resolve=>server?.close(resolve));await pool?.end()});
@@ -128,5 +137,34 @@ describe.skipIf(!databaseUrl)('Bitbucket flow against PostgreSQL',()=>{
     await drainQueue();
     expect(Number((await pool.query("SELECT count(*) FROM review_runs r JOIN pull_requests p ON p.id=r.pull_request_id WHERE p.number=43")).rows[0].count)).toBe(1);
     expect(calls.filter(c=>c.url.includes('openai')).length).toBe(openaiCalls);
+  });
+
+  it('reviews with the agent engine: the agent gets the repository checkout, the diff without fixed context and the agent instructions',async()=>{
+    await pool.query("INSERT INTO settings(key,value) VALUES('review_engine','\"agent\"') ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value");
+    openaiFails=false;remote[44]=pr(44,'abc44');
+    await sendWebhook('pullrequest:created',{pullrequest:remote[44]});
+    await drainQueue();
+    const tasks=calls.filter(c=>c.url==='http://cerebro.test/tasks');
+    expect(tasks).toHaveLength(2);
+    expect(calls.some(c=>c.url==='https://api.openai.com/v1/responses')).toBe(false);
+    const detection=tasks[0].body;
+    expect(detection.checkout).toEqual({workspace:'ws',slug:'repo',commit:'abc44',email:'bot@example.org',token:'bitbucket-token'});
+    expect(detection.model).toBe('claude-opus-5-5');
+    expect(detection.instructions).toContain('tienes el repositorio completo');
+    expect(detection.instructions).toContain('No comentes los seeders.');
+    expect(detection.input).toContain('+L2| return $this->json($repo->find($id));');
+    expect(detection.input).not.toContain('<contexto>');
+    // Sin lista fija de ficheros: Sancho no lee código del repositorio por su cuenta.
+    expect(calls.filter(c=>c.url.includes('/src/abc44/'))).toEqual([]);
+    const run=(await pool.query("SELECT r.status,r.coverage FROM review_runs r JOIN pull_requests p ON p.id=r.pull_request_id WHERE p.number=44")).rows[0];
+    expect(run.status).toBe('completed');
+    expect(run.coverage.engine).toBe('agent');
+    expect(run.coverage.context_list).toEqual([{path:'app/Policies/InvoicePolicy.php',reason:'leído por el agente',truncated:false}]);
+    expect(run.coverage.agent_searches).toBe(2);
+    const usage=(await pool.query("SELECT provider,model,cost_usd FROM usage_calls WHERE provider='claude-agent'")).rows;
+    expect(usage).toHaveLength(2);
+    expect(usage[0]).toMatchObject({model:'claude-opus-5-5 · suscripción',cost_usd:'0'});
+    const exchange=(await pool.query("SELECT tools FROM ai_exchanges WHERE model LIKE 'claude-opus-5-5%' ORDER BY created_at LIMIT 1")).rows[0];
+    expect(exchange.tools[1]).toEqual({tool:'Read',input:{file_path:'app/Policies/InvoicePolicy.php'}});
   });
 });

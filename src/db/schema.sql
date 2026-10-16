@@ -27,3 +27,4 @@ CREATE TABLE IF NOT EXISTS finding_threads (id uuid PRIMARY KEY DEFAULT gen_rand
 ALTER TABLE findings ADD COLUMN IF NOT EXISTS short_title text, ADD COLUMN IF NOT EXISTS short_impact text, ADD COLUMN IF NOT EXISTS short_fix text;
 CREATE TABLE IF NOT EXISTS ai_exchanges (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), run_id uuid NOT NULL REFERENCES review_runs ON DELETE CASCADE, kind text NOT NULL, model text NOT NULL, instructions text NOT NULL, input text NOT NULL, output text, status text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS ai_exchanges_run_idx ON ai_exchanges(run_id, created_at);
+ALTER TABLE ai_exchanges ADD COLUMN IF NOT EXISTS tools jsonb NOT NULL DEFAULT '[]';

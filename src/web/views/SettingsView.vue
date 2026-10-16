@@ -2,7 +2,7 @@
 // Ajustes (solo administración): una subpestaña por área (Bitbucket, OpenAI, modelo y costes,
 // publicación). Cada área guarda lo suyo; la publicación automática se guarda al cambiar el interruptor.
 import {computed, reactive, ref, watch} from 'vue';
-import {Bot, CircleDollarSign, GitBranch, ListChecks, MessageSquare} from 'lucide-vue-next';
+import {Bot, CircleDollarSign, Cpu, GitBranch, ListChecks, MessageSquare} from 'lucide-vue-next';
 import {api, errorMessage, post, put} from '../lib/api';
 import {crumbTail, notify, route, setTab} from '../lib/ui-state';
 import {useLoad} from '../lib/use-load';
@@ -18,6 +18,7 @@ import UiTabs from '../ui/UiTabs.vue';
 
 const tabs = [
   {id: 'bitbucket', label: 'Bitbucket', icon: GitBranch},
+  {id: 'motor', label: 'Motor de revisión', icon: Cpu},
   {id: 'openai', label: 'OpenAI', icon: Bot},
   {id: 'modelo', label: 'Modelo y costes', icon: CircleDollarSign},
   {id: 'reglas', label: 'Reglas de revisión', icon: ListChecks},
@@ -29,6 +30,8 @@ watch(tab, t => { crumbTail.value = tabs.find(x => x.id === t)!.label; }, {immed
 
 const form = reactive({workspace: '', bbEmail: '', bbToken: '', apiKey: '', model: '', inputPrice: null as number | null, outputPrice: null as number | null, budget: null as number | null});
 const autoPublish = ref(false);
+// Motor: el agente de Claude (servicio cerebro) o una llamada directa a OpenAI.
+const engine = reactive({engine: 'agent' as 'agent' | 'openai', agentModel: 'claude-opus-5-5', agent: {configured: false, reachable: false, mode: null as string | null}});
 // Reglas: generales (ajustes) y por repositorio (repositories.config). Las rutas, una por línea.
 interface Repo { id: string; name: string; workspace: string; slug: string; config: {context?: string; rules?: string; exclusions?: string[]} }
 const repos = ref<Repo[]>([]);
@@ -50,6 +53,8 @@ const {loading, error, reload} = useLoad(async () => {
   Object.assign(status, {bitbucket: !!v.bitbucket_connection?.configured, openai: !!v.openai_secret?.configured});
   autoPublish.value = v.auto_publish === true;
   Object.assign(globalRules, {rules: v.review_rules || '', exclusions: (v.review_exclusions || []).join(NL)});
+  const e = await api<{engine: 'agent' | 'openai'; agent: typeof engine.agent; agent_model: string}>('/engine');
+  Object.assign(engine, {engine: e.engine, agentModel: e.agent_model, agent: e.agent});
   repos.value = await api<Repo[]>('/repositories');
   if (repos.value.length) pickRepo(repoRules.id || repos.value[0].id);
   return true;
@@ -112,6 +117,11 @@ const saveRepoRules = () => run('rules-repo', async () => {
   notify('success', `Reglas de ${r?.name || 'el repositorio'} guardadas`, 'Se aplicarán desde su próxima revisión.');
 });
 
+const saveEngine = () => run('engine', async () => {
+  await put('/settings', {review_engine: engine.engine, agent_model: engine.agentModel.trim() || 'claude-opus-5-5'});
+  notify('success', 'Motor guardado', engine.engine === 'agent' ? 'Las próximas revisiones las hará el agente de Claude.' : 'Las próximas revisiones irán directamente a OpenAI.');
+});
+
 async function toggleAutoPublish(value: boolean) {
   autoPublish.value = value;
   try {
@@ -149,6 +159,30 @@ async function toggleAutoPublish(value: boolean) {
           <UiButton type="submit" variant="primary" :loading="busy === 'bitbucket'">Guardar conexión</UiButton>
           <UiButton :disabled="!status.bitbucket" :loading="busy === 'bitbucket-test'" @click="testBitbucket">Probar conexión</UiButton>
         </div>
+      </form>
+    </UiCard>
+
+    <UiCard v-else-if="tab === 'motor'" title="Motor de revisión" description="Quién revisa el código. El agente de Claude explora el repositorio por su cuenta y lee lo que necesita; OpenAI recibe el diff y una selección fija de ficheros.">
+      <form class="form" novalidate @submit.prevent="saveEngine">
+        <div class="engines" role="radiogroup" aria-label="Motor de revisión">
+          <label class="engine" :class="{on: engine.engine === 'agent'}">
+            <input v-model="engine.engine" type="radio" value="agent" name="engine">
+            <span class="engine-title">Agente de Claude <span class="muted">· recomendado</span></span>
+            <span class="engine-text">Lee el repositorio completo en el commit de la PR y decide qué abrir. Solo puede leer: no ejecuta nada.</span>
+            <UiBadge :tone="engine.agent.reachable ? 'success' : engine.agent.configured ? 'danger' : 'warning'">{{ engine.agent.reachable ? (engine.agent.mode === 'api' ? 'Conectado · clave de API' : 'Conectado · suscripción') : engine.agent.configured ? 'No responde' : 'No instalado' }}</UiBadge>
+          </label>
+          <label class="engine" :class="{on: engine.engine === 'openai'}">
+            <input v-model="engine.engine" type="radio" value="openai" name="engine">
+            <span class="engine-title">OpenAI</span>
+            <span class="engine-text">Recibe el diff y hasta 16 ficheros relacionados. Usa la clave y el modelo de las pestañas OpenAI y Modelo y costes.</span>
+            <UiBadge :tone="status.openai && form.model ? 'success' : 'warning'">{{ status.openai && form.model ? 'Configurado' : 'Sin clave o sin modelo' }}</UiBadge>
+          </label>
+        </div>
+        <UiField v-if="engine.engine === 'agent'" v-slot="f" label="Modelo del agente" help="El nombre del modelo de Claude. Por defecto, claude-opus-5-5.">
+          <input :id="f.id" v-model="engine.agentModel" class="control" autocomplete="off" :aria-describedby="f.describedby">
+        </UiField>
+        <UiNotice v-if="engine.engine === 'agent' && !engine.agent.reachable" tone="warning">El servicio del agente no responde. Mientras tanto, las revisiones fallarán: revisa el contenedor cerebro o elige OpenAI.</UiNotice>
+        <div class="row-actions"><UiButton type="submit" variant="primary" :loading="busy === 'engine'">Guardar motor</UiButton></div>
       </form>
     </UiCard>
 
@@ -232,6 +266,14 @@ async function toggleAutoPublish(value: boolean) {
 <style scoped>
 .form { display: flex; flex-direction: column; gap: var(--space-4); max-width: 760px; }
 .mono { font-family: var(--font-mono); font-size: var(--text-sm); }
+.engines { display: grid; gap: var(--space-3); grid-template-columns: minmax(0, 1fr); }
+.engine { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); padding: var(--space-4) var(--space-4) var(--space-4) 44px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); cursor: pointer; transition: border-color var(--duration) var(--ease), background var(--duration) var(--ease); }
+.engine:hover { background: var(--color-surface-hover); }
+.engine.on { border-color: var(--color-primary); background: var(--color-primary-soft); }
+.engine input { position: absolute; left: var(--space-4); top: 19px; width: 16px; height: 16px; accent-color: var(--color-primary); }
+.engine-title { font-weight: 600; }
+.engine-text { color: var(--color-text-muted); font-size: var(--text-sm); }
+@media (min-width: 768px) { .engines { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .fields { display: grid; gap: var(--space-4); grid-template-columns: minmax(0, 1fr); max-width: 760px; }
 .gap { margin-top: var(--space-4); max-width: 760px; }
 .gap-lg { margin-top: var(--space-6); }

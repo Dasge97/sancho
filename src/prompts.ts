@@ -6,16 +6,17 @@ import fs from 'node:fs';
 
 const dir = new URL('../prompts/', import.meta.url);
 const cache = new Map<string, string>();
-function template(name: 'deteccion' | 'verificacion'): string {
+function template(name: 'deteccion' | 'verificacion' | 'agente'): string {
   if (!cache.has(name)) cache.set(name, fs.readFileSync(new URL(name + '.md', dir), 'utf8'));
   return cache.get(name)!;
 }
 
 export interface TeamRules { global?: string | null; projectContext?: string | null; repository?: string | null }
 
-/** Instrucciones completas: la plantilla y, al final, las reglas del equipo si las hay. */
-export function buildInstructions(kind: 'deteccion' | 'verificacion', rules: TeamRules = {}): string {
+/** Instrucciones completas: la plantilla, la parte del agente si revisa el motor, y al final las reglas del equipo. */
+export function buildInstructions(kind: 'deteccion' | 'verificacion', rules: TeamRules = {}, agent = false): string {
   const parts = [template(kind).trim()];
+  if (agent) parts.push(template('agente').trim());
   const extra: string[] = [];
   if (rules.projectContext?.trim()) extra.push('### De qué va este proyecto\n\n' + rules.projectContext.trim());
   if (rules.global?.trim()) extra.push('### Reglas del equipo para todos los repositorios\n\n' + rules.global.trim());

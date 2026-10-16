@@ -5,6 +5,8 @@ RUN npm ci
 COPY . .
 RUN npm run typecheck && npm test && npm run build
 FROM node:22-alpine
+# git: el servicio cerebro clona los repositorios que revisa el agente.
+RUN apk add --no-cache git
 ENV NODE_ENV=production
 WORKDIR /app
 COPY package*.json ./
