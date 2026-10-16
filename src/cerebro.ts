@@ -45,8 +45,16 @@ async function prepareCheckout(c: {workspace: string; slug: string; commit: stri
     const url = `https://bitbucket.org/${encodeURIComponent(c.workspace)}/${encodeURIComponent(c.slug)}.git`;
     const env = {...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: auth};
     try {
+      // La API de pull requests da el commit abreviado (12 caracteres) y git solo trae commits por su hash completo.
+      let commit = c.commit;
+      if (commit.length < 40) {
+        const r = await fetch(`https://api.bitbucket.org/2.0/repositories/${encodeURIComponent(c.workspace)}/${encodeURIComponent(c.slug)}/commit/${encodeURIComponent(commit)}`, {headers: {Authorization: 'Basic ' + Buffer.from(`${c.email}:${c.token}`).toString('base64')}, signal: AbortSignal.timeout(20_000)});
+        const full = r.ok ? String(((await r.json()) as any).hash || '') : '';
+        if (!/^[0-9a-f]{40}$/i.test(full)) throw Object.assign(new Error('commit'), {stderr: `no se pudo resolver el commit ${commit} (HTTP ${r.status})`});
+        commit = full;
+      }
       await run('git', ['init', '-q'], {cwd: dir, env});
-      await run('git', ['fetch', '-q', '--depth', '1', url, c.commit], {cwd: dir, env, timeout: 180_000, maxBuffer: 10 * 1024 * 1024});
+      await run('git', ['fetch', '-q', '--depth', '1', url, commit], {cwd: dir, env, timeout: 180_000, maxBuffer: 10 * 1024 * 1024});
       await run('git', ['-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD'], {cwd: dir, env, timeout: 120_000});
     } catch (e: any) {
       await fs.rm(dir, {recursive: true, force: true});
